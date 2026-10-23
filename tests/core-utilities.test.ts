@@ -10,7 +10,7 @@ import { getGlobals, getKvSettings, getSettings, init } from '../src/settings/se
 import { validateSettings } from '../src/settings/validators';
 import { getDataset } from '../src/settings/kv';
 import { convertToNAT64IPv6, isValidNAT64Prefix } from '../src/cores/nat64';
-import { generateJWTToken } from '../src/auth/auth';
+import { generateJWTToken, resetPassword, authenticate, hashPassword, verifyPassword } from '../src/auth/auth';
 import { appendActivityLog, getRecentActivityLog, activityLogRetentionDays } from '../src/common/activity-log';
 
 init(new Request('https://worker.example.test/test-secret/panel/panel'), { CF_PAGES: '0' } as any);
@@ -386,4 +386,67 @@ test('Xray Best Ping candidate configs never reference a missing fallback outbou
         getKvSettings().protocols = originalProtocols;
         globalThis.fetch = originalFetch;
     }
+});
+
+test('password hashing rejects wrong passwords and verifies legacy plaintext entries', async () => {
+    const hashed = await hashPassword('correct-password');
+    assert.ok(hashed.startsWith('pbkdf2$'));
+    assert.notEqual(hashed, 'correct-password');
+    assert.equal(await verifyPassword('correct-password', hashed), true);
+    assert.equal(await verifyPassword('wrong', hashed), false);
+    assert.equal(await verifyPassword('correct-password', 'correct-password'), true);
+    assert.equal(await verifyPassword('wrong', 'correct-password'), false);
+    assert.equal(await verifyPassword('correct-password', 'pbkdf2$malformed'), false);
+    assert.equal(await verifyPassword('correct-password', 'pbkdf2$0$c2FsdA==$aGFzaA=='), false);
+    assert.equal(await verifyPassword('correct-password', null), false);
+});
+
+test('successful login migrates legacy plaintext passwords and password change invalidates sessions', async () => {
+    const store = new Map<string, string>([
+        ['pwd', 'correct-password'],
+        ['secretKey', 'stale-secret']
+    ]);
+    const env = {
+        kv: {
+            get: async (key: string) => store.get(key) ?? null,
+            put: async (key: string, value: string) => { store.set(key, value); },
+            delete: async (key: string) => { store.delete(key); }
+        }
+    } as any;
+
+    const login = await generateJWTToken(new Request('https://worker.example.test/secret/login/authenticate', {
+        method: 'POST',
+        headers: { 'CF-Connecting-IP': '192.0.2.45' },
+        body: JSON.stringify({ username: 'owner@example.test', password: 'correct-password' })
+    }), env);
+    assert.equal(login.status, 200);
+
+    const migrated = store.get('pwd');
+    assert.ok(migrated.startsWith('pbkdf2$'));
+    assert.equal(await verifyPassword('correct-password', migrated), true);
+
+    const token = /jwtToken=([^;]*)/.exec(login.headers.get('Set-Cookie') ?? '')?.[1];
+    assert.ok(token);
+    const session = new Request('https://worker.example.test/secret/panel/panel', {
+        headers: { Cookie: `jwtToken=${token}` }
+    });
+    assert.equal(await authenticate(session, env), true);
+
+    const reset = await resetPassword(new Request('https://worker.example.test/secret/panel/panel/reset-password', {
+        method: 'POST',
+        headers: { Cookie: `jwtToken=${token}` },
+        body: JSON.stringify({ password: 'brand-new-password' })
+    }), env);
+    assert.equal(reset.status, 200);
+
+    const updated = store.get('pwd');
+    assert.ok(updated.startsWith('pbkdf2$'));
+    assert.notEqual(updated, migrated);
+    assert.equal(await verifyPassword('brand-new-password', updated), true);
+    assert.equal(store.has('secretKey'), false);
+
+    const invalidated = await authenticate(new Request('https://worker.example.test/secret/panel/panel', {
+        headers: { Cookie: `jwtToken=${token}` }
+    }), env);
+    assert.equal(invalidated, false);
 });
