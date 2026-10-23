@@ -215,13 +215,13 @@ export function buildChainOutbound(): Outbound | undefined {
             flow, security, type, sni, fp,
             host, path, alpn, pbk, sid, spx,
             headerType, serviceName, mode,
-            authority, encryption
+            authority, encryption, extra
         }
     } = getSettings();
 
     const streamSettings: StreamSettings = {
         network: type || 'raw',
-        ...buildTransport(type, headerType, path, host, serviceName, mode, authority),
+        ...buildTransport(type, headerType, path, host, serviceName, mode, authority, extra),
         security,
         tlsSettings: security === 'tls' ? buildTlsSettings(sni || address, fp, alpn, false, undefined) : undefined,
         realitySettings: security === 'reality' ? buildRealitySettings(sni, fp, pbk, sid, spx) : undefined,

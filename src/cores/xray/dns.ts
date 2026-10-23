@@ -31,7 +31,7 @@ export async function buildDNS(
     }
 
     if (domainToStaticIPs) {
-        const { ipv4, ipv6 } = await resolveDNS(domainToStaticIPs, enableIPv6);
+        const { ipv4, ipv6 } = await resolveDNS(domainToStaticIPs, !enableIPv6);
         hosts[domainToStaticIPs] = [...ipv4, ...ipv6];
     }
 

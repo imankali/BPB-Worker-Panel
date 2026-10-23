@@ -6,14 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>BPB Panel v__VERSION__</title>
     <link id="favicon" rel="icon" type="image/x-icon" href="data:image/x-icon;base64,__ICON__">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,300;1,400;1,500;1,700&display=swap"
-        rel="stylesheet">
-    <link rel="stylesheet"
-        href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=add_circle,autorenew,cancel,check_circle,clock_loader_40,close,cloud_download,cloud_upload,code_xml,content_copy,dashboard,data_usage,delete,dns,download,draft,error,fingerprint,help,info,key_vertical,keyboard_arrow_down,link,logout,open_in_new,qr_code,refresh,save,settings,settings_backup_restore,share,smart_toy,terminal,tune,upgrade,upload,verified,visibility,visibility_off&display=block" />
-    <link id="favicon" rel="icon" type="image/x-icon" href="data:image/x-icon;base64,__ICON__">
     <style>
         /* CSS_PLACEHOLDER */
     </style>
@@ -60,7 +52,62 @@
                 <span><span class="material-symbols-rounded">data_usage</span>Total</span>
                 <span><b id="total-usage"></b><span class="separator"> | </span><span id="total-pct"></span>%</span>
             </div>
+            <div class="dashboard-action">
+                <span>Worker DNS / fixed egress check</span>
+                <button type="button" id="runDiagnostics" class="button" onclick="runDiagnostics(this)">
+                    <span class="material-symbols-rounded">monitor_heart</span>Run check
+                </button>
+            </div>
+            <p id="diagnostics-result" role="status" aria-live="polite">Browser-to-Worker request RTT is measured from this device (median of 3); DNS and a fixed Cloudflare egress check run from the Worker. Best Ping runs inside your client.</p>
         </div>
+
+        <section class="container section quick-start" aria-labelledby="quick-start-heading">
+            <h3 id="quick-start-heading"><span class="material-symbols-rounded">rocket_launch</span> شروع سریع / Quick start</h3>
+            <p>یک‌بار لینک خصوصی را به اپ اضافه کنید؛ بعد از آن پروفایل از سرور به‌روزرسانی می‌شود. لینک را مثل رمز عبور نگه دارید و عمومی نکنید.</p>
+            <div class="quick-start-card">
+                <div>
+                    <strong>Hiddify — import in one tap</strong>
+                    <p>روی همان دستگاه، Hiddify را باز کنید و افزودن پروفایل را تأیید کنید.</p>
+                </div>
+                <div class="quick-start-actions">
+                    <button type="button" class="button" onclick="openHiddifyImport()">
+                        <span class="material-symbols-rounded">open_in_new</span> Open in Hiddify
+                    </button>
+                    <button type="button" class="button" onclick="copyHiddifyProfile()">
+                        <span class="material-symbols-rounded">content_copy</span> Copy profile URL
+                    </button>
+                </div>
+            </div>
+            <div class="quick-start-card">
+                <div>
+                    <strong>V2rayNG — subscription link</strong>
+                    <p>در V2rayNG بروید به Subscription settings → Add subscription، لینک را بچسبانید و Refresh بزنید.</p>
+                </div>
+                <div class="quick-start-actions">
+                    <button type="button" class="button" onclick="copyV2RayNGSubscription()">
+                        <span class="material-symbols-rounded">content_copy</span> Copy V2rayNG link
+                    </button>
+                </div>
+            </div>
+            <p class="quick-start-note">این‌ها قالب‌های استاندارد پروفایل‌اند؛ نتیجه و سرعت به دامنه، مسیر، اپراتور و وضعیت شبکه بستگی دارد. هیچ روش یا لینکی در برابر فیلترینگ تضمین همیشگی ندارد.</p>
+        </section>
+
+        <section class="container section activity-log" aria-labelledby="activity-log-heading">
+            <div class="activity-log-header">
+                <h3 id="activity-log-heading"><span class="material-symbols-rounded">manage_search</span> Recent activity</h3>
+                <button type="button" class="button" onclick="loadActivityLog()">
+                    <span class="material-symbols-rounded">refresh</span> Refresh
+                </button>
+            </div>
+            <p id="activity-log-status" role="status" aria-live="polite">Loading recent activity…</p>
+            <div class="table-container">
+                <table class="activity-log-table">
+                    <thead><tr><th>Local date and time (seconds)</th><th>Level</th><th>Event</th><th>Details</th></tr></thead>
+                    <tbody id="activity-log-entries"></tbody>
+                </table>
+            </div>
+            <p class="quick-start-note">The latest 100 admin events are retained for 7 days. KV replication can delay a new event briefly. Passwords, IP addresses, and subscription URLs are not included in these activity entries. On Workers, custom Cloudflare logs are enabled by the next panel update (invocation URL logs stay off); Pages execution logs are live-only.</p>
+        </section>
 
         <div class="accordion-item">
             <details>
@@ -225,6 +272,17 @@
                             </div>
                         </div>
                         <div class="form-control">
+                            <label for="dohFallbackEnabled">Public DoH failover</label>
+                            <div class="select-wrapper">
+                                <select id="dohFallbackEnabled" name="dohFallbackEnabled">
+                                    <option value="false">Disabled (privacy default)</option>
+                                    <option value="true">Enabled (may disclose queried domains)</option>
+                                </select>
+                                <span class="material-symbols-rounded">keyboard_arrow_down</span>
+                            </div>
+                            <small>When enabled, failed lookups may be retried through AdGuard, Cloudflare, then Google. No query log is stored by this panel.</small>
+                        </div>
+                        <div class="form-control">
                             <label for="securePath">
                                 Panel - Subscriptions Path<span class="material-symbols-rounded"
                                     onclick="randPath()">refresh</span>
@@ -346,6 +404,13 @@
                             </div>
                         </div>
                         <div class="form-control">
+                            <label for="bestPingUrl">Best Ping URL (client-side)</label>
+                            <div>
+                                <input type="url" id="bestPingUrl" name="bestPingUrl" required>
+                            </div>
+                            <small>Clients test this URL locally. Mihomo requires 2xx; Xray and sing-box status handling differs. The Worker diagnostic never fetches this custom URL. <a href="https://github.com/bia-pain-bache/BPB-Worker-Panel/blob/main/docs/BestPing.md" target="_blank" rel="noopener noreferrer">Core details</a></small>
+                        </div>
+                        <div class="form-control">
                             <label for="bestPingInterval">Best Ping Interval</label>
                             <div>
                                 <input type="number" id="bestPingInterval" name="bestPingInterval" min="10" max="90">
@@ -400,6 +465,7 @@
                                     <div>
                                         <textarea id="prefixes" name="prefixes" rows="1"></textarea>
                                     </div>
+                                    <small>Existing bracketed prefixes keep their legacy mapping. For RFC 6052, enter IPv6/prefix-length CIDR, e.g. 64:ff9b::/96.</small>
                                 </div>
                             </div>
                         </div>
@@ -429,6 +495,7 @@
                         <div class="container">
                             <div class="section">
                                 <h4><span class="material-symbols-rounded">tune</span> Custom CDN</h4>
+                                <p class="custom-cdn-note">CDN fronting override: enter tested edge addresses, the routed Host and a valid TLS SNI. This only works when that CDN is configured to forward to your service; edge reachability varies by ISP and is not auto-discovered.</p>
                                 <div class="form-control">
                                     <label for="customCdnAddrs">Addresses</label>
                                     <div>
@@ -445,6 +512,38 @@
                                     <label for="customCdnSni">SNI</label>
                                     <div>
                                         <input type="text" id="customCdnSni" name="customCdnSni">
+                                    </div>
+                                </div>
+                                <div class="mobile-cdn-profile">
+                                    <h4>MCI candidate routes (AS197207)</h4>
+                                    <p class="custom-cdn-note">Optional separate pool for routes you personally tested on MCI. The panel does not detect your SIM or verify reachability from the mobile network.</p>
+                                    <div class="form-control">
+                                        <label for="mciCdnAddrs">MCI Edge addresses</label>
+                                        <div><textarea id="mciCdnAddrs" name="mciCdnAddrs" rows="1"></textarea></div>
+                                    </div>
+                                    <div class="form-control">
+                                        <label for="mciCdnHost">MCI routed Host</label>
+                                        <div><input type="text" id="mciCdnHost" name="mciCdnHost"></div>
+                                    </div>
+                                    <div class="form-control">
+                                        <label for="mciCdnSni">MCI TLS SNI</label>
+                                        <div><input type="text" id="mciCdnSni" name="mciCdnSni"></div>
+                                    </div>
+                                </div>
+                                <div class="mobile-cdn-profile">
+                                    <h4>Irancell candidate routes (AS44244)</h4>
+                                    <p class="custom-cdn-note">Optional separate pool for routes you personally tested on Irancell. This is a label/profile, not automatic carrier detection or a connectivity guarantee.</p>
+                                    <div class="form-control">
+                                        <label for="irancellCdnAddrs">Irancell Edge addresses</label>
+                                        <div><textarea id="irancellCdnAddrs" name="irancellCdnAddrs" rows="1"></textarea></div>
+                                    </div>
+                                    <div class="form-control">
+                                        <label for="irancellCdnHost">Irancell routed Host</label>
+                                        <div><input type="text" id="irancellCdnHost" name="irancellCdnHost"></div>
+                                    </div>
+                                    <div class="form-control">
+                                        <label for="irancellCdnSni">Irancell TLS SNI</label>
+                                        <div><input type="text" id="irancellCdnSni" name="irancellCdnSni"></div>
                                     </div>
                                 </div>
                             </div>
@@ -1109,10 +1208,6 @@
         </div>
     </div>
 
-    <script type="module">
-        import { polyfillCountryFlagEmojis } from "https://cdn.skypack.dev/country-flag-emoji-polyfill";
-        polyfillCountryFlagEmojis();
-    </script>
     <script>/* JS_PLACEHOLDER */</script>
 </body>
 

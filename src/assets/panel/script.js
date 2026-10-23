@@ -10,14 +10,17 @@ const [
 ] = [
     'select',
     'input[type=number]',
-    'input:not([type=file])',
+    'input:not([type=file]):not([type=checkbox])',
     'textarea',
     'input[type=checkbox]'
 ].map(query => proxyForm.querySelectorAll(query));
 
 getUsage();
 initPanel();
+loadActivityLog();
 fetchIPInfo();
+proxyForm.addEventListener('input', handleProxyFormChanges);
+proxyForm.addEventListener('change', handleProxyFormChanges);
 
 async function initPanel(settings, tgSettings, subscriptions, clients) {
     try {
@@ -160,8 +163,6 @@ function renderPanel(proxySettings, tgSettings, subscriptions, clients) {
 
     globalThis.initialFormData = new FormData(proxyForm);
     handleProxyFormChanges();
-    proxyForm.addEventListener('input', handleProxyFormChanges);
-    proxyForm.addEventListener('change', handleProxyFormChanges);
     handleFragmentMode();
 
     if (tgSettings) {
@@ -176,6 +177,7 @@ function renderPanel(proxySettings, tgSettings, subscriptions, clients) {
 }
 
 function hasFormDataChanged() {
+    if (!globalThis.initialFormData) return false;
     const formDataToObject = (formData) => Object.fromEntries(formData.entries());
     const configForm = document.getElementById('configForm');
     const currentFormData = new FormData(configForm);
@@ -187,6 +189,7 @@ function hasFormDataChanged() {
 }
 
 function handleProxyFormChanges(force = false) {
+    if (typeof force !== 'boolean') force = false;
     const applyButton = document.getElementById('applyButton');
     const isChanged = hasFormDataChanged();
     applyButton.disabled = force ? false : !isChanged;
@@ -210,6 +213,53 @@ function handleTgFormChanges(settings) {
     }
 
     setupBtn.disabled = !userId.value.trim() || !token.value.trim();
+}
+
+
+async function runDiagnostics(button) {
+    const resultElement = document.getElementById('diagnostics-result');
+    const icons = startWaiting(button, '', 'refresh');
+    button.disabled = true;
+    resultElement.textContent = 'Checking DNS resolution and fixed Worker egress…';
+
+    try {
+        const rttSamples = [];
+        for (let sample = 0; sample < 3; sample++) {
+            const startedAt = performance.now();
+            const pingResponse = await fetch('./panel/ping', { credentials: 'include', cache: 'no-store' });
+            rttSamples.push(Math.round(performance.now() - startedAt));
+            if (pingResponse.status === 401) {
+                window.location.href = './login';
+                return;
+            }
+            if (!pingResponse.ok) throw new Error(`Browser-to-Worker ping failed (HTTP ${pingResponse.status})`);
+        }
+        const sortedRttSamples = [...rttSamples].sort((a, b) => a - b);
+        const browserWorkerRtt = sortedRttSamples[1];
+
+        const response = await fetch('./panel/diagnostics', { credentials: 'include', cache: 'no-store' });
+        const { success, status, message, body } = await response.json();
+        if (status === 401) {
+            window.location.href = './login';
+            return;
+        }
+        if (!success) throw new Error(message || `HTTP ${status}`);
+
+        const dns = body.dns;
+        const probe = body.connectivityProbe;
+        const dnsText = dns.ok
+            ? `DNS: OK (${dns.elapsedMs} ms; ${dns.ipv4} IPv4, ${dns.ipv6} IPv6)`
+            : `DNS: failed (${dns.error || 'no A or AAAA answer'})`;
+        const probeText = probe.ok
+            ? `Worker egress: OK (HTTP ${probe.status}, ${probe.elapsedMs} ms)`
+            : `Worker egress: failed (${probe.error || `HTTP ${probe.status}`})`;
+        resultElement.textContent = `Browser ↔ Worker request RTT: ${browserWorkerRtt} ms (median of 3) · ${dnsText} · ${probeText}. ${body.note}`;
+    } catch (error) {
+        resultElement.textContent = `Diagnostics failed: ${error.message || error}`;
+    } finally {
+        button.disabled = false;
+        stopWaiting(icons);
+    }
 }
 
 async function getIpDetails(ip) {
@@ -276,6 +326,75 @@ function generateSubUrl(type, core, tag) {
     return url.href;
 }
 
+function getQuickConnectUrls() {
+    const hiddifyProfile = new URL('./sub/normal', window.location.href);
+    hiddifyProfile.searchParams.set('app', 'sing-box');
+    const v2raySubscription = new URL('./sub/raw', window.location.href);
+    v2raySubscription.searchParams.set('app', 'xray');
+    return {
+        hiddifyProfile: hiddifyProfile.href,
+        hiddifyImport: `hiddify://import/${hiddifyProfile.href}#BPB`,
+        v2raySubscription: v2raySubscription.href
+    };
+}
+
+function openHiddifyImport() {
+    window.location.href = getQuickConnectUrls().hiddifyImport;
+}
+
+function copyHiddifyProfile() {
+    copyToClipboard(getQuickConnectUrls().hiddifyProfile);
+}
+
+function copyV2RayNGSubscription() {
+    copyToClipboard(getQuickConnectUrls().v2raySubscription);
+}
+
+async function loadActivityLog() {
+    const status = document.getElementById('activity-log-status');
+    const tbody = document.getElementById('activity-log-entries');
+    if (!status || !tbody) return;
+
+    status.textContent = 'Loading recent activity…';
+    try {
+        const response = await fetch(`./panel/activity-log?nocache=${Date.now()}`, { cache: 'no-store' });
+        const { success, status: httpStatus, message, body } = await response.json();
+        if (!success) throw new Error(`status ${httpStatus} - ${message || 'Could not load activity.'}`);
+
+        const events = Array.isArray(body?.events) ? body.events : [];
+        const formatter = new Intl.DateTimeFormat(undefined, {
+            year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+        });
+        const rows = events.map(entry => {
+            const date = new Date(entry.timestamp);
+            if (Number.isNaN(date.getTime())) return null;
+            const time = elm('time', {
+                dateTime: date.toISOString(),
+                title: date.toISOString(),
+                textContent: formatter.format(date)
+            });
+            const level = elm('span', {
+                className: `log-level log-level-${entry.level}`,
+                textContent: entry.level
+            });
+            return elm('tr', {}, [
+                elm('td', {}, time),
+                elm('td', {}, level),
+                elm('td', { textContent: entry.event }),
+                elm('td', { textContent: entry.detail })
+            ]);
+        }).filter(Boolean);
+        tbody.replaceChildren(...rows);
+        status.textContent = events.length
+            ? `Showing ${events.length} latest event${events.length === 1 ? '' : 's'}; local time with seconds.`
+            : 'No admin activity has been recorded yet.';
+    } catch (error) {
+        tbody.replaceChildren();
+        status.textContent = `Activity log unavailable: ${error.message}`;
+    }
+}
+
 async function generateQRCode(data) {
     const url = new URL('./qrcode', window.location.href);
     url.searchParams.set('data', data);
@@ -323,10 +442,25 @@ function showQRCode(subUrl) {
     });
 }
 
-function copyToClipboard(url) {
-    navigator.clipboard.writeText(url)
-        .then(() => notify('info', 'Copied to clipboard', [url]))
-        .catch(error => console.error('Failed to copy:', error));
+async function copyToClipboard(url) {
+    try {
+        if (navigator.clipboard?.writeText && window.isSecureContext) {
+            await navigator.clipboard.writeText(url);
+        } else {
+            const input = elm('textarea', { value: url, readOnly: true });
+            input.style.position = 'fixed';
+            input.style.opacity = '0';
+            document.body.appendChild(input);
+            input.select();
+            const copied = document.execCommand('copy');
+            input.remove();
+            if (!copied) throw new Error('Clipboard access is not available in this browser.');
+        }
+        notify('info', 'Copied to clipboard', ['The link is ready to paste. Keep private profile links confidential.']);
+    } catch (error) {
+        notify('error', 'Copy failed', ['Select and copy the link manually.']);
+        console.error('Failed to copy link:', error);
+    }
 }
 
 function copyDoh() {
@@ -562,9 +696,11 @@ function updateSettings(event, data) {
             }
 
             if (!success) {
-                errors.forEach(error => {
-                    notify('error', error.field, error.message);
-                });
+                if (Array.isArray(errors)) {
+                    errors.forEach(error => notify('error', error.field || 'Apply settings', error.message || [message]));
+                } else {
+                    notify('error', 'Apply settings', [message || 'The server could not save the settings. Please try again.']);
+                }
                 throw new Error(`status ${status} - ${message}`);
             }
 
@@ -580,7 +716,7 @@ function updateSettings(event, data) {
         .finally(() => stopWaiting(icons));
 }
 
-function setupTelegramBot() {
+function setupTelegramBot(event) {
     event.preventDefault();
     event.stopPropagation();
 
@@ -732,11 +868,14 @@ function openResetPass(event) {
     const showHides = modal.querySelectorAll('.show-hide');
     const title = modal.querySelector('.modal-title');
     const form = modal.querySelector('.config-form');
-    const username = document.getElementById('usernameContainer');
+    const usernameContainer = document.getElementById('usernameContainer');
+    const usernameInput = document.getElementById('username');
     if (!event) {
         title.textContent = 'Set Password';
-        username.style.display = 'flex';
-        username.setAttribute('required', 'true');
+        usernameContainer.style.display = 'flex';
+        usernameInput.required = true;
+    } else {
+        usernameInput.required = false;
     }
 
     close.onclick = () => modal.hidden = true;

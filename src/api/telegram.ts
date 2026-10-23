@@ -20,7 +20,7 @@ export async function setupTelegramWebhook(request: Request, env: Env): Promise<
         const userID = telegramUserId.trim();
 
         if (!botToken || !userID) {
-            return respond(false, HttpStatus.BAD_REQUEST, 'Missing but info.');
+            return respond(false, HttpStatus.BAD_REQUEST, 'Missing bot info.');
         }
 
         const { securePath } = getGlobals();
@@ -317,7 +317,7 @@ async function handleCallback(cq: TgCallbackQuery, token: string, chatId: number
                 break;
             }
 
-            if (!result.total || !result.worker) break;
+            if (result.total === undefined || result.worker === undefined) break;
             const text = buildUsageText(result.total, result.worker);
             if (data === 'usage_refresh' && cq.message?.message_id) {
                 await tgFetch(token, 'editMessageText', {
@@ -338,8 +338,8 @@ async function handleCallback(cq: TgCallbackQuery, token: string, chatId: number
             break;
 
         default:
-            const typeKey = data.split('_')[1];
             if (data.startsWith('sub_')) {
+                const typeKey = data.slice(4);
                 const subscription = subscriptions[typeKey];
                 if (!subscription) break;
 
@@ -391,7 +391,8 @@ async function handleCallback(cq: TgCallbackQuery, token: string, chatId: number
             }
 
             if (data.startsWith('client_')) {
-                const client = clients.find(cli => cli.name === typeKey);
+                const clientName = data.slice(7);
+                const client = clients.find(cli => cli.name === clientName);
                 if (!client) break;
                 let text = [
                     `✅ <b>${client.name}</b>`,
@@ -459,7 +460,7 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
         switch (text) {
             case '/usage':
                 const result = await getCfWorkerUsage();
-                if (!result.success || !result.worker || !result.total) break;
+                if (!result.success || result.worker === undefined || result.total === undefined) break;
                 await tgFetch(botToken, 'sendMessage', {
                     chat_id: chatId,
                     text: buildUsageText(result.total, result.worker),
@@ -505,7 +506,7 @@ export async function handleTelegramWebhook(request: Request, env: Env): Promise
 
 async function checkCfUsageWarning(botToken: string, chatId: number): Promise<void> {
     const result = await getCfWorkerUsage();
-    if (!result.success || !result.worker || !result.total) return;
+    if (!result.success || result.worker === undefined || result.total === undefined) return;
 
     const nearLimit = result.total / 100000 * 100 > 80;
     if (nearLimit) {

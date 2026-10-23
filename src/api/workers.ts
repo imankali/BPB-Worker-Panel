@@ -6,6 +6,11 @@ export async function deployWorkers(script: string) {
     const metadata = {
         main_module: 'worker.js',
         keep_bindings: ['kv_namespace'],
+        observability: {
+            enabled: true,
+            head_sampling_rate: 1,
+            logs: { enabled: true, invocation_logs: false, head_sampling_rate: 1 }
+        },
         compatibility_date: new Date().toISOString().split('T')[0],
         compatibility_flags: ['nodejs_compat']
     };

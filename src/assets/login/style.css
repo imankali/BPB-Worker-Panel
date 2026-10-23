@@ -38,7 +38,7 @@ body {
 }
 
 body {
-    font-family: "Ubuntu", system-ui;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     position: relative;
     overflow: hidden;
     text-align: center;

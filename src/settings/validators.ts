@@ -1,7 +1,8 @@
 import { PanelSettings } from '#types/settings';
 import { isBase64, isDomain, isHex, isIPv4, isIPv4CIDR, isIPv6, isIPv6CIDR, isValidUrl } from '@utils';
-import { isValidUUID } from '@common';
+import { base64DecodeUtf8, isValidUUID } from '@common';
 import { getGlobals } from '@settings';
+import { isValidNAT64Prefix } from '@cores/nat64';
 
 export interface ValidationError {
     field: string;
@@ -19,6 +20,7 @@ const validators = [
     validateNAT64Prefixes,
     validateWarpEndpoints,
     validateMinMax,
+    validateBestPingUrl,
     validateUpstreamProxy,
     validateChainProxy,
     validateCustomCdn,
@@ -99,8 +101,8 @@ function validateRemoteDNS(form: PanelSettings, errors: ValidationError[]) {
         errors.push({
             field: 'Remote DNS',
             message: [
-                'Cloudflare DNS is not allowed for workers.',
-                'Please use other public DNS servers like Google, Adguard...'
+                'This Cloudflare DNS endpoint is not supported for Workers in this configuration.',
+                'Choose a supported HTTPS DNS service that is reachable from your client network (for example, AdGuard or a trusted local resolver).'
             ]
         });
     }
@@ -212,13 +214,13 @@ function validateProxyIPs(form: PanelSettings, errors: ValidationError[]) {
 }
 
 function validateNAT64Prefixes(form: PanelSettings, errors: ValidationError[]) {
-    const invalids = form.prefixes.filter((value: string) => !isIPv6(value));
+    const invalids = form.prefixes.filter((value: string) => !isValidNAT64Prefix(value));
     if (invalids.length) {
         errors.push({
             field: 'NAT64 Prefixes',
             message: [
                 'Invalid NAT64 prefix.',
-                'Please enter each prefix in a new line like [IPv6].',
+                'Use legacy [IPv6::] syntax to preserve an existing route, or RFC 6052 IPv6 CIDR with /32, /40, /48, /56, /64, or /96.',
                 'Invalid values are:\n',
                 ...invalids.map(ip => `+ ${ip}`)
             ]
@@ -264,11 +266,31 @@ function validateMinMax(form: PanelSettings, errors: ValidationError[]) {
     }
 }
 
+
+function validateBestPingUrl(form: PanelSettings, errors: ValidationError[]) {
+    // Keep accepting older settings payloads that predate this field.
+    if (typeof form.bestPingUrl !== 'string') return;
+
+    try {
+        const url = new URL(form.bestPingUrl);
+        const validHost = isDomain(url.hostname) || isIPv4(url.hostname) || isIPv6(url.hostname);
+        if (
+            url.protocol !== 'https:' || !validHost || url.username || url.password ||
+            (url.port && url.port !== '443') || url.hash || url.href.length > 2048
+        ) throw new Error();
+    } catch {
+        errors.push({
+            field: 'Best Ping URL',
+            message: ['Enter a public HTTPS URL on port 443 (no credentials or fragment). The URL is used by clients for a 2xx health check from their own network.']
+        });
+    }
+}
+
 function validateChainProxy(form: PanelSettings, errors: ValidationError[]) {
     let chainProxy = form.chainProxy;
     if (!chainProxy) return true;
-    const vmRegex = new RegExp(`${_VM_}:\\/\\/.+$`);
-    const othersRegex = new RegExp(`(http|socks|socks5|${_VL_}|${_TR_}|ss):\\/\\/[^\\s@]+@[^\\s:]+:[^\\s]+`);
+    const vmRegex = new RegExp(`^${_VM_}:\\/\\/.+$`);
+    const othersRegex = new RegExp(`^(http|socks|socks5|${_VL_}|${_TR_}|ss):\\/\\/[^\\s@]+@[^\\s:]+:[^\\s]+`);
     const isVMess = vmRegex.test(chainProxy);
     const isOthers = othersRegex.test(chainProxy);
 
@@ -286,18 +308,34 @@ function validateChainProxy(form: PanelSettings, errors: ValidationError[]) {
                 ' + ss://base64@server:port...'
             ]
         });
+        return;
     }
 
-    const config = new URL(chainProxy);
-    let { protocol, username } = config;
-    let security = config.searchParams.get('security');
-    let type = config.searchParams.get('type');
+    let protocol: string;
+    let username: string;
+    let security: string | null;
+    let type: string | null;
 
-    if (isVMess) {
-        const vmConfig = JSON.parse(atob(config.host));
-        username = vmConfig.id;
-        security = vmConfig.tls;
-        type = vmConfig.net;
+    try {
+        const config = new URL(chainProxy);
+        protocol = config.protocol;
+        username = config.username;
+        security = config.searchParams.get('security');
+        type = config.searchParams.get('type');
+
+        if (isVMess) {
+            const vmPayload = chainProxy.replace(new RegExp(`^${_VM_}:\\/\\/`, 'i'), '').split(/[?#]/, 1)[0];
+            const vmConfig = JSON.parse(base64DecodeUtf8(vmPayload));
+            username = vmConfig.id;
+            security = vmConfig.tls;
+            type = vmConfig.net;
+        }
+    } catch {
+        errors.push({
+            field: 'Chain Proxy',
+            message: ['Invalid Config URL or Base64 payload!']
+        });
+        return;
     }
 
     if ([`${_VL_}:`, `${_TR_}:`, `${_VM_}:`].includes(protocol)) {
@@ -326,7 +364,7 @@ function validateChainProxy(form: PanelSettings, errors: ValidationError[]) {
                 field: 'Chain Proxy',
                 message: [
                     'Invalid Config!',
-                    `${_VL_CAP_}, ${_VM_CAP_} or ${_TR_CAP_} transmission can be tcp, ws, grpc or httpupgrade.`
+                    `${_VL_CAP_}, ${_VM_CAP_} or ${_TR_CAP_} transmission can be tcp, raw, ws, grpc, httpupgrade or xhttp.`
                 ]
             });
         }
@@ -334,43 +372,49 @@ function validateChainProxy(form: PanelSettings, errors: ValidationError[]) {
 }
 
 function validateCustomCdn(form: PanelSettings, errors: ValidationError[]) {
-    const { customCdnAddrs, customCdnHost, customCdnSni } = form;
-    const isCustomCdn = !!customCdnAddrs.length || !!customCdnHost || !!customCdnSni;
-    let valid = !isCustomCdn || (!!customCdnAddrs.length && !!customCdnHost && !!customCdnSni);
+    const profiles = [
+        { label: 'Shared Custom CDN', addrs: form.customCdnAddrs, host: form.customCdnHost, sni: form.customCdnSni },
+        { label: 'MCI candidate CDN', addrs: form.mciCdnAddrs, host: form.mciCdnHost, sni: form.mciCdnSni },
+        { label: 'Irancell candidate CDN', addrs: form.irancellCdnAddrs, host: form.irancellCdnHost, sni: form.irancellCdnSni }
+    ];
 
-    if (!valid) {
-        errors.push({
-            field: 'Custom CDN',
-            message: ['All fields should be filled or empty together!']
-        });
-    }
+    for (const profile of profiles) {
+        const configured = !!profile.addrs?.length || !!profile.host || !!profile.sni;
+        if (!configured) continue;
+        if (!profile.addrs?.length || !profile.host || !profile.sni) {
+            errors.push({ field: profile.label, message: ['Addresses, Host and SNI must be filled together, or all left empty.'] });
+            continue;
+        }
 
-    if (isCustomCdn && valid) {
-        const fields = [
-            ['customCdnSni', 'Custom CDN SNI'],
-            ['customCdnHost', 'Custom CDN Host']
-        ] as const;
+        if (!isDomain(profile.host)) {
+            errors.push({ field: `${profile.label} Host`, message: [`Invalid domain: ${profile.host}`] });
+        }
+        if (!isDomain(profile.sni)) {
+            errors.push({ field: `${profile.label} SNI`, message: [`Invalid domain: ${profile.sni}`] });
+        }
 
-        fields.forEach(([field, tag]) => {
-            if (!isDomain(form[field])) {
-                errors.push({
-                    field: tag,
-                    message: [`Invalid Domain: ${form[field]}`]
-                });
-            }
-        });
-
-        const invalids = form.customCdnAddrs.filter(addr => !isValidHost(addr));
+        const invalids = profile.addrs.filter(addr => addr.includes('/') || !isValidHost(addr));
         if (invalids.length) {
             errors.push({
-                field: 'Custom CDN Addresses',
-                message: [
-                    'Invalid IPs or Domains.',
-                    'Please enter each value in a new line.',
-                    'Invalid values are:\n',
-                    ...invalids.map(val => `+ ${val}`)
-                ]
+                field: `${profile.label} Addresses`,
+                message: ['Enter valid IP addresses or hostnames, one per line.', ...invalids.map(value => `Invalid: ${value}`)]
             });
+        }
+    }
+
+    const addressOwners = new Map<string, string>();
+    for (const profile of profiles) {
+        for (const address of profile.addrs || []) {
+            const key = address.toLowerCase();
+            const previous = addressOwners.get(key);
+            if (previous) {
+                errors.push({
+                    field: profile.label,
+                    message: [`${address} is also listed in ${previous}. Keep edge addresses unique across profiles; use Shared Custom CDN for an address common to both operators.`]
+                });
+            } else {
+                addressOwners.set(key, profile.label);
+            }
         }
     }
 }
@@ -513,8 +557,10 @@ function validateDoH(form: PanelSettings, errors: ValidationError[]) {
     const doh = form.dohUrl;
     let valid = true;
     try {
-        const { protocol, pathname } = new URL(doh);
-        valid = protocol === 'https:' && pathname.endsWith('/dns-query');
+        const url = new URL(doh);
+        const validHost = isDomain(url.hostname) || isIPv4(url.hostname) || isIPv6(url.hostname);
+        valid = url.protocol === 'https:' && validHost && url.pathname.endsWith('/dns-query') &&
+            !url.username && !url.password && (!url.port || url.port === '443') && !url.hash;
     } catch {
         valid = false;
     }
@@ -522,8 +568,12 @@ function validateDoH(form: PanelSettings, errors: ValidationError[]) {
     if (doh && !valid) {
         errors.push({
             field: 'Underlying DoH URL',
-            message: ['It should be like https://Domain-or-IP/dns-query']
+            message: ['Use an HTTPS DoH URL ending in /dns-query on port 443, without credentials or a fragment.']
         });
+    }
+
+    if (form.dohFallbackEnabled !== undefined && typeof form.dohFallbackEnabled !== 'boolean') {
+        errors.push({ field: 'DoH failover', message: ['Choose Enabled or Disabled.'] });
     }
 }
 

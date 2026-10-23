@@ -1,11 +1,15 @@
 *
 !.gitignore
 !package.json
+!package-lock.json
 !tsconfig.json
 !src/
 !src/**
 !scripts/
 !scripts/build.js
+!scripts/test.js
+!tests/
+!tests/**
 !.github/
 !.github/**
 !README_fa.md

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { getGlobals } from '@settings';
-import { handleTCPOutBound, makeReadableWebSocketStream, safeCloseTcpSocket } from '@protocols/common';
+import { handleTCPOutBound, makeReadableWebSocketStream, safeCloseTcpSocket, writeSocketData } from '@protocols/common';
 
 export async function TrOverWSHandler(request: Request): Promise<Response> {
     const webSocketPair = new WebSocketPair();
@@ -8,17 +8,15 @@ export async function TrOverWSHandler(request: Request): Promise<Response> {
     webSocket.accept();
     webSocket.binaryType = 'arraybuffer';
 
-    let address = '';
-    let portWithRandomLog = '';
-
+    const connectionId = crypto.randomUUID().slice(0, 8);
     const log = (info: string, event?: string) => {
-        console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
+        console.log(`[${connectionId}] ${info}`, event || '');
     };
 
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
     const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
 
-    let remoteSocketWapper: { value: any } = { value: null };
+    let remoteSocketWapper: { value: Socket | null; sentData?: boolean } = { value: null, sentData: false };
     let udpStreamWrite: any = null;
 
     const writableStream = new WritableStream({
@@ -28,9 +26,8 @@ export async function TrOverWSHandler(request: Request): Promise<Response> {
             }
 
             if (remoteSocketWapper.value) {
-                const writer = remoteSocketWapper.value.writable.getWriter();
-                await writer.write(chunk);
-                writer.releaseLock();
+                remoteSocketWapper.sentData = true;
+                await writeSocketData(remoteSocketWapper.value, chunk);
                 return;
             }
 
@@ -41,9 +38,6 @@ export async function TrOverWSHandler(request: Request): Promise<Response> {
                 addressRemote = '',
                 rawClientData,
             } = parseTrHeader(chunk);
-
-            address = addressRemote;
-            portWithRandomLog = `${portRemote}--${Math.random()} tcp`;
 
             if (hasError) {
                 throw new Error(message);
@@ -70,7 +64,7 @@ export async function TrOverWSHandler(request: Request): Promise<Response> {
     readableWebSocketStream
         .pipeTo(writableStream)
         .catch(error => {
-            log('readableWebSocketStream pipeTo error', error);
+            log('WebSocket stream aborted', error instanceof Error ? error.name : 'unknown');
             safeCloseTcpSocket(remoteSocketWapper.value);
         });
 

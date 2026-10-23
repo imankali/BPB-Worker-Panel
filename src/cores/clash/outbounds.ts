@@ -156,7 +156,7 @@ export function buildChainOutbound(): ChainOutbound | undefined {
             pass, password, method, uuid,
             flow, security, type, sni, fp,
             host, path, alpn, pbk, sid,
-            headerType, serviceName, aid,
+            headerType, serviceName, aid, mode, extra,
             encryption
         }
     } = getSettings();
@@ -166,7 +166,7 @@ export function buildChainOutbound(): ChainOutbound | undefined {
     const earlyData = ed ? +ed : undefined;
 
     const tls = buildTLS(protocol, security, false, sni || server, false, undefined, alpn, fp, pbk, sid);
-    const transport = buildTransport(type, headerType, path, host, serviceName, earlyData);
+    const transport = buildTransport(type, headerType, path, host, serviceName, earlyData, mode, extra);
 
     switch (protocol) {
         case 'http':
@@ -217,14 +217,15 @@ export function buildUrlTest(
     proxies: string[],
     isWarp: boolean
 ): URLTest {
-    const { warpBestPingInterval, bestPingInterval } = getSettings();
+    const { warpBestPingInterval, bestPingInterval, bestPingUrl } = getSettings();
     return {
         'name': name,
         'type': 'url-test',
         'proxies': proxies,
-        'url': 'https://www.gstatic.com/generate_204',
+        'url': bestPingUrl || 'https://cp.cloudflare.com/generate_204',
         'interval': isWarp ? warpBestPingInterval : bestPingInterval,
-        'tolerance': 50
+        'tolerance': 50,
+        'expected-status': '200-299'
     };
 }
 
@@ -257,12 +258,12 @@ function buildTLS(
                 'query-server-name': echServerName
             } : undefined
         };
-    } else if (security === 'reality' && publicKey && shortID) {
+    } else if (security === 'reality' && publicKey) {
         return {
             ...common,
             'reality-opts': {
                 'public-key': publicKey,
-                'short-id': shortID
+                'short-id': shortID || ''
             }
         };
     } else return {};

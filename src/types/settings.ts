@@ -16,7 +16,14 @@ export interface KvSettings {
     customCdnAddrs: string[];
     customCdnHost: string;
     customCdnSni: string;
+    mciCdnAddrs: string[];
+    mciCdnHost: string;
+    mciCdnSni: string;
+    irancellCdnAddrs: string[];
+    irancellCdnHost: string;
+    irancellCdnSni: string;
     bestPingInterval: number;
+    bestPingUrl: string;
     protocols: string;
     ports: number[];
     fingerprint: Fingerprint;
@@ -94,6 +101,8 @@ export interface EmbededSettings {
     prefixes: string[];
     fallback: string;
     dohUrl: string;
+    /** Optional public-resolver fallback after the configured DoH fails. Defaults off. */
+    dohFallbackEnabled?: boolean;
     mainDomain: string;
     deployType?: string;
 }
@@ -112,6 +121,7 @@ export interface SharedSettings extends
         | 'prefixes'
         | 'fallback'
         | 'dohUrl'
+        | 'dohFallbackEnabled'
     >,
     Omit<KvSettings,
         | 'remoteSettings'

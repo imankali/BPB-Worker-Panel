@@ -14,13 +14,54 @@ export async function generateJWTToken(request: Request, env: Env): Promise<Resp
         return respond(false, HttpStatus.METHOD_NOT_ALLOWED, 'Method not allowed.');
     }
 
-    const data = await request.json() as any;
+    const { accEmail, accID } = getGlobals();
+    const clientIp = request.headers.get('CF-Connecting-IP') || 'unknown';
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`${accID}:${clientIp}`));
+    const ipHash = Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, '0')).join('');
+    // KV is best-effort, not atomic/global; configure an edge WAF rule for strict enforcement.
+    const rateLimitKey = `auth:login:${ipHash}`;
+    const storedAttempts = Number(await env.kv.get(rateLimitKey) || 0);
+    const attempts = Number.isFinite(storedAttempts) ? Math.max(0, storedAttempts) : 0;
+    const maxAttempts = 8;
+    const windowSeconds = 600;
+
+    if (attempts >= maxAttempts) {
+        return respond(false, HttpStatus.TOO_MANY_REQUESTS, 'Too many failed login attempts. Wait 10 minutes and try again.', null, { 'Retry-After': String(windowSeconds) });
+    }
+
+    const recordFailure = async () => {
+        try {
+            await env.kv.put(rateLimitKey, String(attempts + 1), { expirationTtl: windowSeconds });
+            return true;
+        } catch {
+            // KV's per-key write rate can reject rapid attempts. Fail closed for this request.
+            return false;
+        }
+    };
+    let data: any;
+    try {
+        const contentLength = Number(request.headers.get('Content-Length') || 0);
+        if (contentLength > 4096) throw new Error('Login payload too large');
+        const body = await readBoundedBody(request, 4096);
+        data = JSON.parse(body);
+        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid login payload');
+    } catch {
+        if (!await recordFailure()) {
+            return respond(false, HttpStatus.SERVICE_UNAVAILABLE, 'Login protection is temporarily unavailable. Retry shortly.', null, { 'Retry-After': '1' });
+        }
+        return respond(false, HttpStatus.BAD_REQUEST, 'Invalid login request.');
+    }
+
     const savedPass = await env.kv.get('pwd');
-    const { accEmail } = getGlobals();
-    const username = data.username?.toLowerCase();
-    if (username !== accEmail || data.password !== savedPass) {
+    const username = typeof data.username === 'string' ? data.username.trim().toLowerCase() : '';
+    if (username !== accEmail || typeof data.password !== 'string' || data.password !== savedPass) {
+        if (!await recordFailure()) {
+            return respond(false, HttpStatus.SERVICE_UNAVAILABLE, 'Login protection is temporarily unavailable. Retry shortly.', null, { 'Retry-After': '1' });
+        }
         return respond(false, HttpStatus.UNAUTHORIZED, 'Wrong Credentials.');
     }
+
+    await env.kv.delete(rateLimitKey);
 
     let secretKey = await env.kv.get('secretKey');
     if (!secretKey) {
@@ -29,7 +70,6 @@ export async function generateJWTToken(request: Request, env: Env): Promise<Resp
     }
 
     const secret = new TextEncoder().encode(secretKey);
-    const { accID } = getGlobals();
     const jwtToken = await new SignJWT({ id: accID })
         .setProtectedHeader({ alg: 'HS256' })
         .setIssuedAt()
@@ -40,6 +80,37 @@ export async function generateJWTToken(request: Request, env: Env): Promise<Resp
         'Set-Cookie': `jwtToken=${jwtToken}; Path=/; HttpOnly; Secure; Max-Age=${24 * 60 * 60}; SameSite=Strict`,
         'Content-Type': 'text/plain',
     });
+}
+
+async function readBoundedBody(request: Request, maxBytes: number): Promise<string> {
+    const reader = request.body?.getReader();
+    if (!reader) throw new Error('Missing request body');
+    const chunks: Uint8Array[] = [];
+    let totalBytes = 0;
+
+    try {
+        while (true) {
+            const { value, done } = await reader.read();
+            if (done) break;
+            if (!value) continue;
+            totalBytes += value.byteLength;
+            if (totalBytes > maxBytes) {
+                await reader.cancel();
+                throw new Error('Login payload too large');
+            }
+            chunks.push(value);
+        }
+    } finally {
+        reader.releaseLock();
+    }
+
+    const bytes = new Uint8Array(totalBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+        bytes.set(chunk, offset);
+        offset += chunk.byteLength;
+    }
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
 
 function generateSecretKey(): string {
@@ -84,12 +155,13 @@ export async function resetPassword(request: Request, env: Env): Promise<Respons
 
     const data = await request.json() as any;
     const { accEmail } = getGlobals();
+    const username = data.username?.trim().toLowerCase();
 
-    if (!auth && !data.username) {
+    if (!auth && !username) {
         return respond(false, HttpStatus.BAD_REQUEST, 'Missing username.');
     }
 
-    if (data.username && data.username !== accEmail) {
+    if (username && username !== accEmail) {
         return respond(false, HttpStatus.BAD_REQUEST, 'Wrong username.');
     }
 

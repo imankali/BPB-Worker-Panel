@@ -1,5 +1,5 @@
 import { Outbound, WireguardEndpoint, Config } from '#types/sing-box';
-import { getConfigAddresses, generateRemark, isHttps, getProtocols } from '@utils';
+import { getConfigAddresses, generateRemark, getCdnProfile, isHttps, getProtocols } from '@utils';
 import { buildChainOutbound, buildUrlTest, buildWarpOutbound, buildWebsocketOutbound } from './outbounds.js';
 import { getSettings, getWarpAccounts } from '@settings';
 import { buildRoutingRules } from './routing';
@@ -103,6 +103,8 @@ export async function getSbCustomConfig(isFragment: boolean): Promise<Response> 
         '💦 🔗 Best Ping 🚀': [],
         '💦 Best Ping D 🚀': [],
         '💦 🔗 Best Ping D 🚀': [],
+        '💦 MCI candidates - Best Ping 🚀': [],
+        '💦 Irancell candidates - Best Ping 🚀': [],
     };
 
     for (const domain of domains) {
@@ -118,6 +120,8 @@ export async function getSbCustomConfig(isFragment: boolean): Promise<Response> 
             for (const port of totalPorts) {
                 for (const host of hosts) {
                     if ((port === upstreamPort) !== (host === upstreamServer)) continue;
+                    const networkProfile = getCdnProfile(host);
+                    if (networkProfile && !isHttps(port)) continue;
 
                     const tag = generateRemark(protocolIndex, port, host, protocol, domain, isFragment, false);
                     const outbound = buildWebsocketOutbound(protocol, tag, host, port, domain, isFragment);
@@ -128,6 +132,8 @@ export async function getSbCustomConfig(isFragment: boolean): Promise<Response> 
                     } else {
                         tagGroup['💦 Best Ping 🚀'].push(tag);
                     }
+                    if (networkProfile === 'mci') tagGroup['💦 MCI candidates - Best Ping 🚀'].push(tag);
+                    if (networkProfile === 'irancell') tagGroup['💦 Irancell candidates - Best Ping 🚀'].push(tag);
 
                     if (isChain) {
                         const chainTag = generateRemark(protocolIndex, port, host, protocol, domain, isFragment, true);
@@ -141,6 +147,8 @@ export async function getSbCustomConfig(isFragment: boolean): Promise<Response> 
                         } else {
                             tagGroup['💦 🔗 Best Ping 🚀'].push(chainTag);
                         }
+                        if (networkProfile === 'mci') tagGroup['💦 MCI candidates - Best Ping 🚀'].push(chainTag);
+                        if (networkProfile === 'irancell') tagGroup['💦 Irancell candidates - Best Ping 🚀'].push(chainTag);
                     }
 
                     protocolIndex++;

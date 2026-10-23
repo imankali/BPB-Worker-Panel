@@ -18,25 +18,62 @@ export interface GeoAsset {
     format?: string;
 }
 
-export async function resolveDNS(domain: string, onlyIPv4 = false): Promise<DnsResult> {
-    const dohBaseURL = `https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(domain)}`;
-    const dohURLs = {
-        ipv4: `${dohBaseURL}&type=A`,
-        ipv6: `${dohBaseURL}&type=AAAA`,
-    };
+const dnsCache = new Map<string, { result: DnsResult; expires: number }>();
 
-    try {
-        const ipv4 = await fetchDNSRecords(dohURLs.ipv4, 1);
-        const ipv6 = onlyIPv4 ? [] : await fetchDNSRecords(dohURLs.ipv6, 28);
-        return { ipv4, ipv6 };
-    } catch (error) {
-        throw new Error(`Error resolving DNS for ${domain}: ${safeError(error)}`);
+export async function resolveDNS(domain: string, onlyIPv4 = false): Promise<DnsResult> {
+    const { dohUrl, dohFallbackEnabled } = getSettings();
+    const allowFallback = dohFallbackEnabled === true;
+    const cacheKey = `${dohUrl || 'default'}:${allowFallback}:${domain}:${onlyIPv4}`;
+    const cached = dnsCache.get(cacheKey);
+    if (cached && cached.expires > Date.now()) return cached.result;
+
+    // Failover can disclose queried names to additional resolver operators, so it is explicit opt-in.
+    const resolvers = [...new Set([
+        dohUrl,
+        ...(allowFallback ? [
+            'https://dns.adguard-dns.com/dns-query',
+            'https://cloudflare-dns.com/dns-query',
+            'https://dns.google/resolve'
+        ] : [])
+    ].filter((url): url is string => !!url))];
+    let lastError: unknown;
+
+    for (const resolver of resolvers) {
+        try {
+            const makeUrl = (type: 'A' | 'AAAA') => {
+                const url = new URL(resolver);
+                url.searchParams.set('name', domain);
+                url.searchParams.set('type', type);
+                return url.toString();
+            };
+            const [ipv4Result, ipv6Result] = await Promise.allSettled([
+                fetchDNSRecords(makeUrl('A'), 1),
+                onlyIPv4 ? Promise.resolve([]) : fetchDNSRecords(makeUrl('AAAA'), 28)
+            ]);
+            if (ipv4Result.status === 'rejected') throw ipv4Result.reason;
+            // A failure to obtain AAAA data should not trigger duplicate A queries at another resolver.
+            const result = {
+                ipv4: ipv4Result.value,
+                ipv6: ipv6Result.status === 'fulfilled' ? ipv6Result.value : []
+            };
+            dnsCache.set(cacheKey, { result, expires: Date.now() + 60_000 });
+            if (dnsCache.size > 256) dnsCache.delete(dnsCache.keys().next().value!);
+            return result;
+        } catch (error) {
+            lastError = error;
+        }
     }
+
+    throw new Error(`Error resolving DNS: ${safeError(lastError)}`);
 }
 
 export async function fetchDNSRecords(url: string, recordType: number): Promise<string[]> {
     try {
-        const response = await fetch(url, { headers: { accept: 'application/dns-json' } });
+        const response = await fetch(url, {
+            headers: { accept: 'application/dns-json' },
+            signal: AbortSignal.timeout(4000)
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const data: any = await response.json();
 
         if (!data.Answer) return [];
@@ -46,7 +83,8 @@ export async function fetchDNSRecords(url: string, recordType: number): Promise<
             .map((record: any) => record.data);
 
     } catch (error) {
-        throw new Error(`Failed to fetch DNS records from ${url}: ${safeError(error)}`);
+        // Do not echo the full DoH URL: it contains the queried name in its query string.
+        throw new Error(`DoH request failed: ${safeError(error)}`);
     }
 }
 
@@ -55,8 +93,18 @@ export function getProtocols() {
     return protocols.split(',');
 }
 
+export type MobileNetworkProfile = 'mci' | 'irancell';
+
+export function getCdnProfile(address: string): MobileNetworkProfile | 'shared' | null {
+    const { customCdnAddrs, mciCdnAddrs, irancellCdnAddrs } = getSettings();
+    if (mciCdnAddrs.includes(address)) return 'mci';
+    if (irancellCdnAddrs.includes(address)) return 'irancell';
+    if (customCdnAddrs.includes(address)) return 'shared';
+    return null;
+}
+
 export async function getConfigAddresses(domain: string, isFragment: boolean): Promise<string[]> {
-    const { enableIPv6, customCdnAddrs, cleanIPs } = getSettings();
+    const { enableIPv6, customCdnAddrs, mciCdnAddrs, irancellCdnAddrs, cleanIPs } = getSettings();
     const { ipv4, ipv6 } = await resolveDNS(domain, !enableIPv6);
     const addrs = [
         domain,
@@ -65,7 +113,8 @@ export async function getConfigAddresses(domain: string, isFragment: boolean): P
         ...cleanIPs
     ];
 
-    return addrs.concatIf(!isFragment, customCdnAddrs);
+    const cdnAddrs = [...customCdnAddrs, ...mciCdnAddrs, ...irancellCdnAddrs];
+    return addrs.concatIf(!isFragment, cdnAddrs);
 }
 
 export function generateRemark(
@@ -77,15 +126,16 @@ export function generateRemark(
     isFragment: boolean,
     isChain: boolean
 ): string {
-    const { cleanIPs, customCdnAddrs, customDomain, upstreamParams: { upstreamServer } } = getSettings();
+    const { cleanIPs, customDomain, upstreamParams: { upstreamServer } } = getSettings();
 
     const chainSign = isChain ? '🔗 ' : '';
     const protoSign = protocol === _VL_ ? _VL_CAP_ : _TR_CAP_;
 
     const fragmentSign = isFragment ? 'F ' : '';
     const customDomainSign = domain === customDomain ? 'D ' : '';
-    const customCdnSign = customCdnAddrs.includes(address) ? 'C ' : '';
-    const configType = `${fragmentSign}${customDomainSign}${customCdnSign}`;
+    const cdnProfile = getCdnProfile(address);
+    const cdnSign = cdnProfile === 'mci' ? 'MCI candidate ' : cdnProfile === 'irancell' ? 'Irancell candidate ' : cdnProfile === 'shared' ? 'C ' : '';
+    const configType = `${fragmentSign}${customDomainSign}${cdnSign}`;
 
     let addressType;
     cleanIPs.includes(address)
@@ -149,6 +199,23 @@ export function isIPv4(address: string): boolean {
     return ipv4Pattern.test(address);
 }
 
+export function isPublicIPv4(address: string): boolean {
+    if (!isIPv4(address) || address.includes('/')) return false;
+    const octets = address.split('.');
+    if (octets.some(octet => !/^(?:0|[1-9][0-9]{0,2})$/.test(octet))) return false;
+    const [a, b, c] = octets.map(Number);
+    if (a === 0 || a === 10 || a === 127 || a >= 224) return false;
+    if (a === 100 && b >= 64 && b <= 127) return false; // shared address space
+    if (a === 169 && b === 254) return false;
+    if (a === 172 && b >= 16 && b <= 31) return false;
+    if (a === 192 && b === 168) return false;
+    if (a === 192 && b === 0 && (c === 0 || c === 2)) return false; // special-use/documentation
+    if (a === 192 && b === 88 && c === 99) return false; // deprecated 6to4 relay anycast
+    if (a === 198 && (b === 18 || b === 19 || (b === 51 && c === 100))) return false;
+    if (a === 203 && b === 0 && c === 113) return false; // documentation
+    return true;
+}
+
 export function isIPv6(address: string): boolean {
     const ipv6Pattern = /^\[(?:(?:[a-fA-F0-9]{1,4}:){7}[a-fA-F0-9]{1,4}|(?:[a-fA-F0-9]{1,4}:){1,7}:|::(?:[a-fA-F0-9]{1,4}:){0,7}|(?:[a-fA-F0-9]{1,4}:){1,6}:[a-fA-F0-9]{1,4}|(?:[a-fA-F0-9]{1,4}:){1,5}(?::[a-fA-F0-9]{1,4}){1,2}|(?:[a-fA-F0-9]{1,4}:){1,4}(?::[a-fA-F0-9]{1,4}){1,3}|(?:[a-fA-F0-9]{1,4}:){1,3}(?::[a-fA-F0-9]{1,4}){1,4}|(?:[a-fA-F0-9]{1,4}:){1,2}(?::[a-fA-F0-9]{1,4}){1,5}|[a-fA-F0-9]{1,4}:(?::[a-fA-F0-9]{1,4}){1,6})\](?:\/(1[0-1][0-9]|12[0-8]|[0-9]?[0-9]))?$/;
     return ipv6Pattern.test(address);
@@ -193,20 +260,32 @@ export function getDomain(url: string) {
             isHostDomain
         };
     } catch {
+        const isHostDomain = isDomain(url);
         return {
-            host: '',
-            isHostDomain: false
+            host: isHostDomain ? url : '',
+            isHostDomain
         };
     }
 }
 
 export function selectSniHost(address: string, domain: string) {
-    const { customCdnAddrs, customCdnHost, customCdnSni } = getSettings();
-    const isCustomAddr = customCdnAddrs.includes(address);
-    const sni = isCustomAddr ? customCdnSni : randomUpperCase(domain);
-    const host = isCustomAddr ? customCdnHost : domain;
+    const settings = getSettings();
+    const profile = getCdnProfile(address);
+    const profileHost = profile === 'mci'
+        ? settings.mciCdnHost
+        : profile === 'irancell'
+            ? settings.irancellCdnHost
+            : settings.customCdnHost;
+    const profileSni = profile === 'mci'
+        ? settings.mciCdnSni
+        : profile === 'irancell'
+            ? settings.irancellCdnSni
+            : settings.customCdnSni;
+    const host = profile ? profileHost : domain;
+    const sni = profile ? profileSni : randomUpperCase(domain);
 
-    return { host, sni, allowInsecure: isCustomAddr };
+    // A custom edge IP does not justify disabling TLS certificate verification: the configured SNI must still validate.
+    return { host, sni, allowInsecure: false };
 }
 
 export function parseHostPort(input: string, brackets?: boolean): { host: string, port: number } {
@@ -321,14 +400,12 @@ Object.prototype.omitEmpty = function <T>(): T | undefined {
 export function extractProxyParams(chainProxy: string) {
     if (!chainProxy) return {};
 
-    let url = new URL(chainProxy);
-    const protocol = url.protocol.slice(0, -1);
-    const stdProtocol = protocol === 'ss' ? _SS_ : protocol.replace('socks5', 'socks');
-
-    if (stdProtocol === _VM_) {
-        const config = JSON.parse(base64DecodeUtf8(url.host));
+    const vmessPrefix = `${_VM_}://`;
+    if (chainProxy.toLowerCase().startsWith(vmessPrefix)) {
+        const payload = chainProxy.slice(vmessPrefix.length).split(/[?#]/, 1)[0];
+        const config = JSON.parse(base64DecodeUtf8(payload));
         return {
-            protocol: stdProtocol,
+            protocol: _VM_,
             uuid: config.id,
             server: config.add,
             port: +config.port,
@@ -345,6 +422,10 @@ export function extractProxyParams(chainProxy: string) {
             alpn: config.alpn || undefined
         };
     }
+
+    const url = new URL(chainProxy);
+    const protocol = url.protocol.slice(0, -1);
+    const stdProtocol = protocol === 'ss' ? _SS_ : protocol.replace('socks5', 'socks');
 
     const configParams: Record<string, string | number | undefined> = {
         protocol: stdProtocol,
@@ -385,20 +466,31 @@ export function extractProxyParams(chainProxy: string) {
             });
 
         case 'socks':
-        case 'http':
-            let user, pass;
-            try {
-                const userInfo = base64DecodeUtf8(url.username);
-                if (userInfo.includes(':')) [user, pass] = userInfo.split(':');
-            } catch (error) {
-                user = url.username;
-                pass = url.password;
+        case 'http': {
+            let user: string | undefined;
+            let pass: string | undefined;
+            const safeDecode = (value: string) => {
+                try { return decodeURIComponent(value); } catch { return value; }
+            };
+            const rawUsername = safeDecode(url.username);
+            if (url.password) {
+                user = rawUsername;
+                pass = safeDecode(url.password);
+            } else if (rawUsername) {
+                try {
+                    const decoded = base64DecodeUtf8(rawUsername);
+                    if (decoded.includes(':')) [user, pass] = decoded.split(/:(.*)/s, 2);
+                    else user = rawUsername;
+                } catch {
+                    user = rawUsername;
+                }
             }
 
             return parseParams(false, {
                 user: user || undefined,
                 pass: pass || undefined
             });
+        }
 
         default:
             return {};

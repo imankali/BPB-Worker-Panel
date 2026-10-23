@@ -215,12 +215,12 @@ export function buildUrlTest(
     outboundTags: string[],
     isWarp: boolean
 ): URLTest {
-    const { warpBestPingInterval, bestPingInterval } = getSettings();
+    const { warpBestPingInterval, bestPingInterval, bestPingUrl } = getSettings();
     return {
         type: 'urltest',
         tag,
         outbounds: outboundTags,
-        url: 'https://www.gstatic.com/generate_204',
+        url: bestPingUrl || 'https://cp.cloudflare.com/generate_204',
         interrupt_exist_connections: false,
         interval: isWarp ? `${warpBestPingInterval}s` : `${bestPingInterval}s`
     };
@@ -258,12 +258,12 @@ function buildTLS(
     };
 
     if (security === 'tls') return tls;
-    if (security === 'reality' && publicKey && shortID) return {
+    if (security === 'reality' && publicKey) return {
         ...tls,
         reality: {
             enabled: true,
             public_key: publicKey,
-            short_id: shortID
+            short_id: shortID || ''
         }
     };
 }

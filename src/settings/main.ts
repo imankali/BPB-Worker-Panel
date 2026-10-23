@@ -19,7 +19,8 @@ export async function updateMainSettings(newSettings: PanelSettings | null): Pro
         prefixes: newSettings ? newSettings.prefixes : [],
         mainDomain,
         fallback: newSettings ? newSettings.fallback : '',
-        dohUrl: newSettings ? newSettings.dohUrl : ''
+        dohUrl: newSettings ? newSettings.dohUrl : '',
+        dohFallbackEnabled: newSettings?.dohFallbackEnabled === true
     };
 
     if (newSettings) {
@@ -29,7 +30,7 @@ export async function updateMainSettings(newSettings: PanelSettings | null): Pro
 
     try {
         const script = await buildScript(false, settings);
-        const { deployType } = getSettings();
+        const { deployType } = getGlobals();
 
         if (deployType === 'pages') {
             await deployPages(script);
@@ -96,7 +97,7 @@ export async function buildScript(upgradePanel: boolean, settings?: MainSettings
         const source = `${_repo_}/releases/latest/download/worker.js`;
         const res = await fetch(source);
         script = await res.text();
-        settings = getSettings();
+        settings = getMainSettings();
     } else {
         script = await decompressGzipBase64(SOURCE_CONTENT);
     }
@@ -114,6 +115,7 @@ export async function buildScript(upgradePanel: boolean, settings?: MainSettings
         prefixes: settings.prefixes,
         fallback: settings.fallback,
         dohUrl: settings.dohUrl,
+        dohFallbackEnabled: settings.dohFallbackEnabled === true,
         mainDomain
     };
 

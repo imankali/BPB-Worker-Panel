@@ -218,6 +218,7 @@ export interface URLTest {
     'url'?: string;
     'interval'?: number;
     'tolerance'?: number;
+    'expected-status'?: string;
 }
 
 export type Outbound =

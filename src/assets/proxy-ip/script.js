@@ -14,7 +14,7 @@ async function loadGeoData() {
         if (!body.length) {
             const cell = elm('td', {
                 textContent: 'Failed to get Proxy IPs',
-                colSpan: '5'
+                colSpan: '7'
             });
             const row = elm('tr', {}, [cell]);
 
@@ -30,7 +30,7 @@ async function loadGeoData() {
 
             const copyIcon = createIcon('content_copy', 'Copy to clipboard');
             const ipText = document.createTextNode(` ${item.ip || '-'}`);
-            const testIcon = createIcon('flash_on', 'Test IP');
+            const testIcon = createIcon('flash_on', 'Test published IP from Worker');
             const ipCell = elm('td', {}, [copyIcon, ipText, testIcon]);
 
             const healthRateCell = elm('td', { textContent: '-' });
@@ -50,7 +50,7 @@ async function loadGeoData() {
         });
 
     } catch (err) {
-        const cell = elm('td', { colSpan: '5', textContent: `Error: ${err.message}` });
+        const cell = elm('td', { colSpan: '7', textContent: `Error: ${err.message}` });
         const row = elm('tr', {}, [cell]);
         tableBody.innerHTML = '';
         tableBody.appendChild(row);
@@ -76,9 +76,9 @@ function testIp(ip, healthyCell, avgLatencyCell) {
             const { successRate, avgLatencyMs } = body;
             healthyCell.textContent = successRate;
             avgLatencyCell.textContent = avgLatencyMs;
-            document.body.classList.remove('is-loading');
         })
-        .catch((error) => console.error(`Failed to test IP: ${error}`));
+        .catch((error) => console.error(`Failed to test IP: ${error}`))
+        .finally(() => document.body.classList.remove('is-loading'));
 }
 
 function elm(tag, props = {}, children = []) {

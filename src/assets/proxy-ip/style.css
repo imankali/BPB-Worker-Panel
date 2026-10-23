@@ -17,7 +17,7 @@
 }
 
 body {
-    font-family: "Twemoji Country Flags", "Ubuntu", system-ui;
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
     text-align: center;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;

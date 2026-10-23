@@ -4,7 +4,8 @@ import {
     safeCloseTcpSocket,
     handleTCPOutBound,
     makeReadableWebSocketStream,
-    WS_READY_STATE_OPEN
+    WS_READY_STATE_OPEN,
+    writeSocketData
 } from '@protocols/common';
 
 export async function VlOverWSHandler(request: Request): Promise<Response> {
@@ -14,17 +15,15 @@ export async function VlOverWSHandler(request: Request): Promise<Response> {
     webSocket.accept();
     webSocket.binaryType = 'arraybuffer';
 
-    let address = '';
-    let portWithRandomLog = '';
-
+    const connectionId = crypto.randomUUID().slice(0, 8);
     const log = (info: string, event?: string) => {
-        console.log(`[${address}:${portWithRandomLog}] ${info}`, event || '');
+        console.log(`[${connectionId}] ${info}`, event || '');
     };
 
     const earlyDataHeader = request.headers.get('sec-websocket-protocol') || '';
     const readableWebSocketStream = makeReadableWebSocketStream(webSocket, earlyDataHeader, log);
 
-    let remoteSocketWapper: { value: Socket | null } = { value: null };
+    let remoteSocketWapper: { value: Socket | null; sentData?: boolean } = { value: null, sentData: false };
     let udpStreamWrite: any = null;
     let isDns = false;
 
@@ -35,9 +34,8 @@ export async function VlOverWSHandler(request: Request): Promise<Response> {
             }
 
             if (remoteSocketWapper.value) {
-                const writer = remoteSocketWapper.value.writable.getWriter();
-                await writer.write(chunk);
-                writer.releaseLock();
+                remoteSocketWapper.sentData = true;
+                await writeSocketData(remoteSocketWapper.value, chunk);
                 return;
             }
 
@@ -50,9 +48,6 @@ export async function VlOverWSHandler(request: Request): Promise<Response> {
                 VLVersion = new Uint8Array([0, 0]),
                 isUDP,
             } = parseVlHeader(chunk, vlUUID);
-
-            address = addressRemote;
-            portWithRandomLog = `${portRemote}--${Math.random()} ${isUDP ? 'udp ' : 'tcp '} `;
 
             if (hasError) {
                 throw new Error(message);
@@ -260,7 +255,8 @@ async function handleUDPOutBound(webSocket: WebSocket, VLResponseHeader: Uint8Ar
         .pipeTo(
             new WritableStream({
                 async write(chunk) {
-                    const resp = await fetch('https://cloudflare-dns.com/dns-query', {
+                    const { dohUrl } = getGlobals();
+                    const resp = await fetch(dohUrl || 'https://cloudflare-dns.com/dns-query', {
                         method: 'POST',
                         headers: {
                             'content-type': 'application/dns-message',
@@ -286,7 +282,7 @@ async function handleUDPOutBound(webSocket: WebSocket, VLResponseHeader: Uint8Ar
             })
         )
         .catch((error) => {
-            log('dns udp has error' + error);
+            log('DNS-over-HTTPS stream failed', error instanceof Error ? error.name : 'unknown');
         });
 
     const writer = transformStream.writable.getWriter();
