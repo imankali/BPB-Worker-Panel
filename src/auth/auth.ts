@@ -9,6 +9,70 @@ export function logout(): Response {
     });
 }
 
+const PASSWORD_HASH_ALGO = 'pbkdf2';
+const PASSWORD_HASH_ITERATIONS = 100_000;
+const MAX_PASSWORD_HASH_ITERATIONS = 5_000_000;
+
+function bytesToBase64(bytes: Uint8Array): string {
+    let binary = '';
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary);
+}
+
+function base64ToBytes(value: string): Uint8Array<ArrayBuffer> {
+    return Uint8Array.from(atob(value), char => char.charCodeAt(0));
+}
+
+function timingSafeEqualBytes(a: Uint8Array, b: Uint8Array): boolean {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+    return diff === 0;
+}
+
+async function derivePasswordKey(password: string, salt: Uint8Array<ArrayBuffer>, iterations: number): Promise<Uint8Array<ArrayBuffer>> {
+    const material = await crypto.subtle.importKey('raw', Uint8Array.from(new TextEncoder().encode(password)), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt, iterations }, material, 256);
+    return new Uint8Array(bits);
+}
+
+function isHashedPassword(stored: string): boolean {
+    return stored.startsWith(`${PASSWORD_HASH_ALGO}$`);
+}
+
+export async function hashPassword(password: string): Promise<string> {
+    const salt = crypto.getRandomValues(new Uint8Array(16));
+    const key = await derivePasswordKey(password, salt, PASSWORD_HASH_ITERATIONS);
+    return `${PASSWORD_HASH_ALGO}$${PASSWORD_HASH_ITERATIONS}$${bytesToBase64(salt)}$${bytesToBase64(key)}`;
+}
+
+export async function verifyPassword(password: string, stored: string | null): Promise<boolean> {
+    if (typeof password !== 'string' || typeof stored !== 'string' || !stored) return false;
+
+    if (!isHashedPassword(stored)) {
+        // Legacy plaintext entry from older releases; migrated to a hash on the next successful login.
+        return timingSafeEqualBytes(new TextEncoder().encode(password), new TextEncoder().encode(stored));
+    }
+
+    const parts = stored.split('$');
+    if (parts.length !== 4 || parts[0] !== PASSWORD_HASH_ALGO) return false;
+
+    const iterations = Number(parts[1]);
+    if (!Number.isInteger(iterations) || iterations < 1 || iterations > MAX_PASSWORD_HASH_ITERATIONS) return false;
+
+    let salt: Uint8Array<ArrayBuffer>;
+    let expected: Uint8Array<ArrayBuffer>;
+    try {
+        salt = base64ToBytes(parts[2]);
+        expected = base64ToBytes(parts[3]);
+    } catch {
+        return false;
+    }
+
+    const actual = await derivePasswordKey(password, salt, iterations);
+    return timingSafeEqualBytes(actual, expected);
+}
+
 export async function generateJWTToken(request: Request, env: Env): Promise<Response> {
     if (request.method !== 'POST') {
         return respond(false, HttpStatus.METHOD_NOT_ALLOWED, 'Method not allowed.');
@@ -54,11 +118,17 @@ export async function generateJWTToken(request: Request, env: Env): Promise<Resp
 
     const savedPass = await env.kv.get('pwd');
     const username = typeof data.username === 'string' ? data.username.trim().toLowerCase() : '';
-    if (username !== accEmail || typeof data.password !== 'string' || data.password !== savedPass) {
+    const password = typeof data.password === 'string' ? data.password : '';
+    const isPasswordValid = await verifyPassword(password, savedPass);
+    if (username !== accEmail || !isPasswordValid) {
         if (!await recordFailure()) {
             return respond(false, HttpStatus.SERVICE_UNAVAILABLE, 'Login protection is temporarily unavailable. Retry shortly.', null, { 'Retry-After': '1' });
         }
         return respond(false, HttpStatus.UNAUTHORIZED, 'Wrong Credentials.');
+    }
+
+    if (savedPass && !isHashedPassword(savedPass)) {
+        await env.kv.put('pwd', await hashPassword(password));
     }
 
     await env.kv.delete(rateLimitKey);
@@ -153,9 +223,17 @@ export async function resetPassword(request: Request, env: Env): Promise<Respons
         return respond(false, HttpStatus.UNAUTHORIZED, 'Unauthorized.');
     }
 
-    const data = await request.json() as any;
+    let data: any;
+    try {
+        const body = await readBoundedBody(request, 4096);
+        data = JSON.parse(body);
+        if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error('Invalid payload');
+    } catch {
+        return respond(false, HttpStatus.BAD_REQUEST, 'Invalid request.');
+    }
+
     const { accEmail } = getGlobals();
-    const username = data.username?.trim().toLowerCase();
+    const username = typeof data.username === 'string' ? data.username.trim().toLowerCase() : '';
 
     if (!auth && !username) {
         return respond(false, HttpStatus.BAD_REQUEST, 'Missing username.');
@@ -165,11 +243,18 @@ export async function resetPassword(request: Request, env: Env): Promise<Respons
         return respond(false, HttpStatus.BAD_REQUEST, 'Wrong username.');
     }
 
-    if (data.password === oldPwd) {
+    const newPassword = data.password;
+    if (typeof newPassword !== 'string' || newPassword.length < 1 || newPassword.length > 256) {
+        return respond(false, HttpStatus.BAD_REQUEST, 'Invalid password.');
+    }
+
+    if (await verifyPassword(newPassword, oldPwd)) {
         return respond(false, HttpStatus.BAD_REQUEST, 'Please enter a new Password.');
     }
 
-    await env.kv.put('pwd', data.password);
+    await env.kv.put('pwd', await hashPassword(newPassword));
+    // Invalidate outstanding sessions so old JWTs cannot outlive the password change.
+    await env.kv.delete('secretKey');
 
     return respond(true, HttpStatus.OK, 'Successfully logged in!', null, {
         'Set-Cookie': 'jwtToken=; Path=/; Secure; SameSite=Strict; Expires=Thu, 01 Jan 1970 00:00:00 GMT',
