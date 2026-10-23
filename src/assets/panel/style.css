@@ -1179,3 +1179,112 @@ table tr:not(:last-child) {
         justify-content: flex-start;
     }
 }
+
+.language-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-inline: 0.5rem;
+    color: var(--color-text-primary);
+}
+
+.language-control select {
+    min-width: 6.5rem;
+    width: auto;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--color-border-accent);
+    border-radius: var(--radius-ui);
+    color: var(--color-text-primary);
+    background: var(--color-bg-input);
+    font: inherit;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+}
+
+.user-guide {
+    text-align: left;
+}
+
+.user-guide summary h3 {
+    justify-content: flex-start;
+}
+
+.guide-fa,
+.guide-en {
+    line-height: 1.8;
+    color: var(--color-text-secondary);
+}
+
+.guide-fa h4,
+.guide-en h4 {
+    color: var(--color-text-primary);
+    margin-bottom: 0.35rem;
+}
+
+.guide-fa ol,
+.guide-en ol {
+    padding-inline-start: 1.5rem;
+}
+
+.guide-fa li,
+.guide-en li {
+    margin-bottom: 0.4rem;
+}
+
+.guide-fa a,
+.guide-en a {
+    color: var(--color-brand-hover);
+}
+
+body.is-persian {
+    font-family: Tahoma, "Noto Sans Arabic", system-ui, sans-serif;
+}
+
+body.is-persian .quick-start,
+body.is-persian .activity-log,
+body.is-persian .user-guide {
+    text-align: right;
+}
+
+body.is-persian .activity-log .table-container th,
+body.is-persian .activity-log .table-container td {
+    text-align: right;
+}
+
+body.is-persian .help-icon {
+    right: auto;
+    left: 0;
+}
+
+body.is-persian .message-text {
+    text-align: right;
+    direction: rtl;
+}
+
+body.is-persian .quick-start-card {
+    direction: rtl;
+}
+
+body.is-persian .header-title h1 {
+    direction: rtl;
+}
+
+body.is-persian .select-wrapper span:last-child {
+    right: auto;
+    left: 6px;
+}
+
+body.is-persian .show-hide {
+    right: auto;
+    left: 10px;
+}

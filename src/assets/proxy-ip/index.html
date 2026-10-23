@@ -11,6 +11,13 @@
 
 <body>
     <div class="header">
+        <label class="language-control" for="panel-language">
+            <span class="sr-only">Language / زبان</span>
+            <select id="panel-language" aria-label="Language / زبان" onchange="setPanelLanguage(this.value)">
+                <option value="fa">فارسی</option>
+                <option value="en">English</option>
+            </select>
+        </label>
         <img id="header-logo" src="data:image/x-icon;base64,__ICON__" alt="BPB Logo" width="48" height="48">
         <h1>
             BPB Panel
@@ -20,23 +27,23 @@
         </h1>
     </div>
 
-    <p class="probe-note">These addresses come from the configured Proxy IP hostname. The test is a limited TCP/HTTP check from the Cloudflare Worker to those published addresses; it does not measure TLS, the client device, or either mobile operator's access path.</p>
+    <p class="probe-note" data-i18n="These addresses come from the configured Proxy IP hostname. The test is a limited TCP/HTTP check from the Cloudflare Worker to those published addresses; it does not measure TLS, the client device, or either mobile operator's access path.">These addresses come from the configured Proxy IP hostname. The test is a limited TCP/HTTP check from the Cloudflare Worker to those published addresses; it does not measure TLS, the client device, or either mobile operator's access path.</p>
     <div class="table-wrapper">
         <table id="geo-table">
             <thead>
                 <tr>
                     <th>#</th>
-                    <th>Proxy IP</th>
-                    <th>Worker probe rate</th>
-                    <th>Worker response time (ms)</th>
-                    <th>Country</th>
-                    <th>City</th>
-                    <th>ISP</th>
+                    <th data-i18n="Proxy IP">Proxy IP</th>
+                    <th data-i18n="Worker probe rate">Worker probe rate</th>
+                    <th data-i18n="Worker response time (ms)">Worker response time (ms)</th>
+                    <th data-i18n="Country">Country</th>
+                    <th data-i18n="City">City</th>
+                    <th data-i18n="ISP">ISP</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
-                    <td colspan="7">Loading...</td>
+                    <td colspan="7" data-i18n="Loading...">Loading...</td>
                 </tr>
             </tbody>
         </table>

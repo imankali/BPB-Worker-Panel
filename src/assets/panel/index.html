@@ -22,6 +22,14 @@
                 </span>
             </h1>
         </div>
+        <label class="language-control" for="panel-language">
+            <span class="material-symbols-rounded">translate</span>
+            <span class="sr-only">Language / زبان</span>
+            <select id="panel-language" aria-label="Language / زبان" onchange="setPanelLanguage(this.value)">
+                <option value="fa">فارسی</option>
+                <option value="en">English</option>
+            </select>
+        </label>
         <a class="link" id="github-link" href="https://github.com/bia-pain-bache/BPB-Worker-Panel" target="_blank">
             <span>
                 <svg xmlns="http://www.w3.org/2000/svg" width="2rem" height="2rem" viewBox="0 0 24 24" fill="white">
@@ -62,12 +70,12 @@
         </div>
 
         <section class="container section quick-start" aria-labelledby="quick-start-heading">
-            <h3 id="quick-start-heading"><span class="material-symbols-rounded">rocket_launch</span> شروع سریع / Quick start</h3>
-            <p>یک‌بار لینک خصوصی را به اپ اضافه کنید؛ بعد از آن پروفایل از سرور به‌روزرسانی می‌شود. لینک را مثل رمز عبور نگه دارید و عمومی نکنید.</p>
+            <h3 id="quick-start-heading"><span class="material-symbols-rounded">rocket_launch</span> Quick start</h3>
+            <p>Add the private profile once, then refresh it from the app when needed. Treat the link like a password; never publish it.</p>
             <div class="quick-start-card">
                 <div>
                     <strong>Hiddify — import in one tap</strong>
-                    <p>روی همان دستگاه، Hiddify را باز کنید و افزودن پروفایل را تأیید کنید.</p>
+                    <p>On the same device, open Hiddify and confirm adding the profile.</p>
                 </div>
                 <div class="quick-start-actions">
                     <button type="button" class="button" onclick="openHiddifyImport()">
@@ -81,7 +89,7 @@
             <div class="quick-start-card">
                 <div>
                     <strong>V2rayNG — subscription link</strong>
-                    <p>در V2rayNG بروید به Subscription settings → Add subscription، لینک را بچسبانید و Refresh بزنید.</p>
+                    <p>In V2rayNG, open Subscription settings → Add subscription, paste the link and refresh.</p>
                 </div>
                 <div class="quick-start-actions">
                     <button type="button" class="button" onclick="copyV2RayNGSubscription()">
@@ -89,7 +97,71 @@
                     </button>
                 </div>
             </div>
-            <p class="quick-start-note">این‌ها قالب‌های استاندارد پروفایل‌اند؛ نتیجه و سرعت به دامنه، مسیر، اپراتور و وضعیت شبکه بستگی دارد. هیچ روش یا لینکی در برابر فیلترینگ تضمین همیشگی ندارد.</p>
+            <p class="quick-start-note">These standard profiles do not guarantee a bypass or a particular speed; results depend on the domain, route, carrier and current network.</p>
+        </section>
+
+        <section class="container section user-guide" aria-labelledby="user-guide-heading">
+            <details>
+                <summary><h3 id="user-guide-heading"><span class="material-symbols-rounded">menu_book</span> User guide</h3></summary>
+                <div class="guide-fa" lang="fa" dir="rtl">
+                    <h4>۱) اتصال به Hiddify</h4>
+                    <ol>
+                        <li>پنل را روی گوشی‌ای که Hiddify نصب است باز کنید و در «شروع سریع» روی «بازکردن در Hiddify» بزنید.</li>
+                        <li>بازشدن Hiddify و افزودن پروفایل را تأیید کنید، سپس یک گره انتخاب و اتصال را روشن کنید.</li>
+                        <li>اگر پنل روی دستگاه دیگری است، «کپی لینک پروفایل» را بزنید و لینک را به‌شکل خصوصی به گوشی منتقل کنید.</li>
+                    </ol>
+                    <h4>۲) اتصال به V2rayNG</h4>
+                    <ol>
+                        <li>«کپی لینک V2rayNG» را بزنید.</li>
+                        <li>در V2rayNG به تنظیمات اشتراک (Subscription settings) ← افزودن اشتراک (Add subscription) بروید، لینک را به‌عنوان آدرس اشتراک اضافه کنید و ذخیره کنید.</li>
+                        <li>در فهرست اشتراک، به‌روزرسانی (Refresh) را بزنید، یک گره انتخاب کنید و اتصال را روشن کنید. لینک اشتراک را با «Import from clipboard» برای یک گره اشتباه نگیرید.</li>
+                    </ol>
+                    <h4>۳) ذخیره و بازگردانی تنظیمات</h4>
+                    <ol>
+                        <li>برای شروع، تنظیمات پیش‌فرض را نگه دارید. اگر گزینه‌ای را تغییر دادید، اعمال (Apply) را بزنید و پیام موفقیت را ببینید.</li>
+                        <li>قبل از تغییرهای پیشرفته از خروجی فایل (Export File) نسخهٔ پشتیبان بگیرید. بعد از ورود فایل (Import File)، مقادیر را بازبینی و سپس Apply کنید.</li>
+                        <li>DNS، Fragment، Noise و مسیرهای CDN به کلاینت و شبکه وابسته‌اند؛ تغییر نامناسب ممکن است اتصال را بدتر کند.</li>
+                    </ol>
+                    <h4>۴) عیب‌یابی</h4>
+                    <ol>
+                        <li>اجرای بررسی، زمان مرورگر تا Worker، DNS و خروجی Worker را بررسی می‌کند؛ این نتیجه، اتصال گوشی یا اپراتور را ثابت نمی‌کند.</li>
+                        <li>در همان دستگاه و شبکه، اشتراک را Refresh و چند گره را آزمایش کنید. Wi‑Fi و دیتای موبایل را جداگانه بسنجید.</li>
+                        <li>رویدادهای اخیر، عملیات مدیریتی اخیر را با زمان محلی تا ثانیه نشان می‌دهد؛ نمایش رخداد تازه در KV ممکن است کمی تأخیر داشته باشد.</li>
+                        <li>برای پشتیبانی، نسخهٔ کلاینت، زمان خطا و نتیجهٔ بررسی را یادداشت کنید. رمز و لینک اشتراک را منتشر نکنید.</li>
+                    </ol>
+                    <p><strong>نکته:</strong> Best Ping تأخیر HTTP را می‌سنجد، نه سرعت دانلود یا پایداری بلندمدت. هیچ لینک یا تنظیمی عبور همیشگی از فیلترینگ یا سرعت ثابت را تضمین نمی‌کند.</p>
+                    <p><a href="https://github.com/bia-pain-bache/BPB-Worker-Panel/blob/main/docs/UserGuide_fa.md" target="_blank" rel="noopener noreferrer">باز کردن راهنمای کامل استفاده</a></p>
+                </div>
+                <div class="guide-en" lang="en" hidden>
+                    <h4>1) Connect with Hiddify</h4>
+                    <ol>
+                        <li>Open the panel on the device with Hiddify installed, then tap “Open in Hiddify” in Quick start.</li>
+                        <li>Confirm opening Hiddify and adding the profile, select a node, and connect.</li>
+                        <li>If the panel is open on another device, copy the profile URL and transfer it privately.</li>
+                    </ol>
+                    <h4>2) Connect with V2rayNG</h4>
+                    <ol>
+                        <li>Tap “Copy V2rayNG link”.</li>
+                        <li>In V2rayNG, open Subscription settings → Add subscription, add the link as a subscription address, and save.</li>
+                        <li>Refresh the subscription list, select a node, and connect. Do not use “Import from clipboard” for a subscription URL.</li>
+                    </ol>
+                    <h4>3) Save and restore settings</h4>
+                    <ol>
+                        <li>Keep defaults to start. After changing a setting, tap Apply and confirm the success message.</li>
+                        <li>Export a backup before advanced changes. After importing a file, review its values before applying.</li>
+                        <li>DNS, Fragment, Noise and CDN routes depend on the client and network; incorrect changes can make connectivity worse.</li>
+                    </ol>
+                    <h4>4) Troubleshooting</h4>
+                    <ol>
+                        <li>Run check measures browser-to-Worker time, DNS and Worker egress; it does not prove that your device or carrier can connect.</li>
+                        <li>Refresh the subscription and test several nodes on the same device and network. Compare Wi-Fi and mobile data separately.</li>
+                        <li>Recent activity shows admin actions in local time to the second. KV replication may delay a new event briefly.</li>
+                        <li>For support, note the client version, error time and diagnostic result. Never publish your password or subscription URL.</li>
+                    </ol>
+                    <p><strong>Note:</strong> Best Ping measures HTTP latency, not download speed or long-term stability. No link or setting can guarantee permanent filtering bypass or a fixed speed.</p>
+                    <p><a href="https://github.com/bia-pain-bache/BPB-Worker-Panel/blob/main/docs/UserGuide_fa.md" target="_blank" rel="noopener noreferrer">Open the complete Persian usage guide</a></p>
+                </div>
+            </details>
         </section>
 
         <section class="container section activity-log" aria-labelledby="activity-log-heading">

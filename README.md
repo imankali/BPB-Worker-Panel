@@ -46,7 +46,9 @@ This project provides a panel for managing **VLESS**, **Trojan** and **Warp** co
 4. **Client compatibility:** XHTTP, Reality, IPv6 and Fragment support varies by core and version. Use the listed minimum client versions and test alternate profiles separately.
 5. Local DNS and the client-side Best Ping URL are configurable. Best Ping measures HTTP latency, not throughput or long-term stability; status validation differs by core (Mihomo is configured for 2xx, while Xray and sing-box expose different probe semantics; see [Best Ping details](docs/BestPing.md)). NAT64 accepts RFC 6052 CIDR lengths `/32`, `/40`, `/48`, `/56`, `/64`, and `/96`; saved bracketed prefixes retain their legacy mapping until deliberately migrated (see [NAT64 notes](docs/NAT64Prefixes.md)). Defaults are only starting points; validate them with the target ISP and avoid enabling Fragment/Noise globally without measuring the results.
 
-## Quick connect and activity logs
+## Quick connect, Persian UI and activity logs
+
+The panel now has a Persian/English language selector (saved in the current browser) and an in-panel usage guide; the full Persian guide is [available here](docs/UserGuide_fa.md).
 
 After deployment, use the panel's **Quick start** card:
 
@@ -87,6 +89,7 @@ Rate-limiting features and configuration options depend on the Cloudflare plan. 
 
 ## Getting started
 
+- [Persian usage guide](docs/UserGuide_fa.md)
 - [Installation methods](https://bia-pain-bache.github.io/BPB-Worker-Panel/wizard/)
 - [Configuration](https://bia-pain-bache.github.io/BPB-Worker-Panel/configuration/)
 - [How to use](https://bia-pain-bache.github.io/BPB-Worker-Panel/usage/)

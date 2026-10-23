@@ -222,3 +222,50 @@ button:active {
         width: 30%;
     }
 }
+.header {
+    position: relative;
+}
+
+.language-control {
+    position: absolute;
+    right: 0;
+    top: -0.5rem;
+}
+
+.language-control select {
+    min-width: 6rem;
+    padding: 0.4rem 0.55rem;
+    border: 1px solid var(--color-border-accent);
+    border-radius: var(--radius-ui);
+    color: var(--color-text-primary);
+    background: var(--color-bg-input);
+    font: inherit;
+}
+
+.sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+}
+
+body.is-persian {
+    font-family: Tahoma, "Noto Sans Arabic", system-ui, sans-serif;
+}
+
+body.is-persian .language-control {
+    right: auto;
+    left: 0;
+}
+
+body.is-persian .form-control {
+    text-align: right;
+}
+
+body.is-persian #username,
+body.is-persian #password {
+    direction: ltr;
+    text-align: left;
+}
