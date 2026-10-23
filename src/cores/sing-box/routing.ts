@@ -101,7 +101,7 @@ function addRoutingRule(
     port?: number
 ) {
     rules.push({
-        rule_set: geosite || geoip,
+        rule_set: geosite?.omitEmpty() || geoip?.omitEmpty(),
         domain_suffix: domain?.length ? domain : undefined,
         ip_cidr: ip?.length ? ip : undefined,
         network,

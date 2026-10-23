@@ -294,7 +294,7 @@ export interface HttpSocksSettings {
     servers: [{
         address: string;
         port: number;
-        users: [{
+        users?: [{
             user: string;
             pass: string;
         }];

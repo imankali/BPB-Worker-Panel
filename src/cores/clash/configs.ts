@@ -2,7 +2,7 @@ import { buildDNS } from './dns';
 import { buildRoutingRules, buildRuleProviders } from './routing';
 import { buildChainOutbound, buildUrlTest, buildWarpOutbound, buildWebsocketOutbound } from './outbounds';
 import type { WireguardOutbound, Config, Outbound } from '#types/clash';
-import { getConfigAddresses, generateRemark, isHttps, getProtocols } from '@utils';
+import { getConfigAddresses, generateRemark, getCdnProfile, isHttps, getProtocols } from '@utils';
 import { sniffer, tun } from './inbounds';
 import { getSettings, getWarpAccounts } from '@settings';
 
@@ -102,6 +102,8 @@ export async function getClNormalConfig(): Promise<Response> {
         '💦 🔗 Best Ping 🚀': [],
         '💦 Best Ping D 🚀': [],
         '💦 🔗 Best Ping D 🚀': [],
+        '💦 MCI candidates - Best Ping 🚀': [],
+        '💦 Irancell candidates - Best Ping 🚀': [],
     };
 
     for (const domain of domains) {
@@ -117,6 +119,8 @@ export async function getClNormalConfig(): Promise<Response> {
             for (const port of totalPorts) {
                 for (const host of hosts) {
                     if ((port === upstreamPort) !== (host === upstreamServer)) continue;
+                    const networkProfile = getCdnProfile(host);
+                    if (networkProfile && !isHttps(port)) continue;
 
                     const tag = generateRemark(protocolIndex, port, host, protocol, domain, false, false);
                     const outbound = buildWebsocketOutbound(protocol, tag, host, port, domain);
@@ -128,6 +132,8 @@ export async function getClNormalConfig(): Promise<Response> {
                         } else {
                             tagGroup['💦 Best Ping 🚀'].push(tag);
                         }
+                        if (networkProfile === 'mci') tagGroup['💦 MCI candidates - Best Ping 🚀'].push(tag);
+                        if (networkProfile === 'irancell') tagGroup['💦 Irancell candidates - Best Ping 🚀'].push(tag);
 
                         if (isChain) {
                             const chainTag = generateRemark(protocolIndex, port, host, protocol, domain, false, true);
@@ -141,6 +147,8 @@ export async function getClNormalConfig(): Promise<Response> {
                             } else {
                                 tagGroup['💦 🔗 Best Ping 🚀'].push(chainTag);
                             }
+                            if (networkProfile === 'mci') tagGroup['💦 MCI candidates - Best Ping 🚀'].push(chainTag);
+                            if (networkProfile === 'irancell') tagGroup['💦 Irancell candidates - Best Ping 🚀'].push(chainTag);
                         }
 
                         protocolIndex++;

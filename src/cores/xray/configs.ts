@@ -13,6 +13,7 @@ import {
 import {
     getConfigAddresses,
     generateRemark,
+    getCdnProfile,
     isDomain,
     isHttps,
     parseHostPort,
@@ -47,18 +48,20 @@ async function buildConfig(
         fakeDNS,
         warpBestPingInterval,
         bestPingInterval,
+        bestPingUrl,
         logLevel,
         allowLANConnection
     } = getSettings();
     let balancers, observatory;
 
     if (isBalancer) {
-        balancers = [buildBalancer('all-proxies', 'proxy', balancerFallback)]
+        const hasProxyFallback = balancerFallback && outbounds.some(outbound => outbound.tag === 'proxy-2');
+        balancers = [buildBalancer('all-proxies', 'proxy', hasProxyFallback)]
             .concatIf(isChain, buildBalancer('all-chains', 'chain', false));
 
         observatory = {
             subjectSelector: isChain ? ['chain', 'proxy'] : ['proxy'],
-            probeUrl: 'https://www.gstatic.com/generate_204',
+            probeUrl: bestPingUrl || 'https://cp.cloudflare.com/generate_204',
             probeInterval: `${isWarp
                 ? warpBestPingInterval
                 : bestPingInterval}s`,
@@ -142,7 +145,8 @@ async function addBestPingConfigs(
     proxyOutbounds: Outbound[],
     chainOutbounds: Outbound[],
     isFragment: boolean,
-    isCustomDomain: boolean
+    isCustomDomain: boolean,
+    mobileProfile?: 'mci' | 'irancell'
 ) {
     totalAddresses = [...new Set(totalAddresses)];
     const isChain = !!chainOutbounds.length;
@@ -151,7 +155,8 @@ async function addBestPingConfigs(
     const customDomainSign = isCustomDomain ? 'D ' : '';
     const configType = `${fragmentSign}${customDomainSign}`;
 
-    const remark = `💦 ${chainSign}Best Ping ${configType}🚀`;
+    const profileSign = mobileProfile === 'mci' ? 'MCI Candidate ' : mobileProfile === 'irancell' ? 'Irancell Candidate ' : '';
+    const remark = `💦 ${chainSign}${profileSign}Best Ping ${configType}🚀`;
     const outbounds = [
         ...chainOutbounds,
         ...proxyOutbounds
@@ -160,7 +165,7 @@ async function addBestPingConfigs(
     const config = await buildConfig(remark, outbounds, true, isChain, true, false, false, totalAddresses);
 
     if (isChain) {
-        await addBestPingConfigs(configs, totalAddresses, proxyOutbounds, [], isFragment, isCustomDomain);
+        await addBestPingConfigs(configs, totalAddresses, proxyOutbounds, [], isFragment, isCustomDomain, mobileProfile);
     }
 
     configs.push(config);
@@ -246,7 +251,7 @@ async function addWorkerlessConfigs(configs: Config[]) {
     );
 
     const googleDnsConfig = await buildConfig(
-        `💦 2 - Serverless 🌟`,
+        `💦 2 - Serverless (AdGuard) 🌟`,
         outbounds,
         false,
         false,
@@ -255,8 +260,8 @@ async function addWorkerlessConfigs(configs: Config[]) {
         true,
         [],
         undefined,
-        'dns.google',
-        ['8.8.8.8', '8.8.4.4']
+        'dns.adguard-dns.com',
+        ['94.140.14.14', '94.140.15.15']
     );
 
     configs.push(cfDnsConfig, googleDnsConfig);
@@ -282,8 +287,16 @@ export async function getXrCustomConfigs(isFragment: boolean): Promise<Response>
         let totalHosts: string[] = [];
         const proxies: Outbound[] = [];
         const chains: Outbound[] = [];
+        const mciHosts: string[] = [];
+        const irancellHosts: string[] = [];
+        const mciProxies: Outbound[] = [];
+        const irancellProxies: Outbound[] = [];
+        const mciChains: Outbound[] = [];
+        const irancellChains: Outbound[] = [];
         const totalPorts = ports.filter(port => !isFragment && domain.endsWith('workers.dev') || isHttps(port));
         const hosts = await getConfigAddresses(domain, isFragment);
+        mciHosts.push(...hosts.filter(host => getCdnProfile(host) === 'mci'));
+        irancellHosts.push(...hosts.filter(host => getCdnProfile(host) === 'irancell'));
         
         if (upstreamServer && upstreamPort && !isFragment) {
             totalPorts.unshift(upstreamPort);
@@ -297,10 +310,14 @@ export async function getXrCustomConfigs(isFragment: boolean): Promise<Response>
             for (const port of totalPorts) {
                 for (const host of hosts) {
                     if ((port === upstreamPort) !== (host === upstreamServer)) continue;
+                    const networkProfile = getCdnProfile(host);
+                    if (networkProfile && !isHttps(port)) continue;
 
                     const outbound = buildWebsocketOutbound('proxy', protocol, host, port, domain, isFragment);
                     const proxy = modifyOutbound(outbound, `proxy-${index}`);
                     proxies.push(proxy);
+                    if (networkProfile === 'mci') mciProxies.push(proxy);
+                    if (networkProfile === 'irancell') irancellProxies.push(proxy);
 
                     const remark = generateRemark(protocolIndex, port, host, protocol, domain, isFragment, false);
                     const config = await buildConfig(remark, [outbound], false, false, false, false, false, [host]);
@@ -313,6 +330,8 @@ export async function getXrCustomConfigs(isFragment: boolean): Promise<Response>
 
                         const chain = modifyOutbound(chainOutbound, `chain-${index}`, `proxy-${index}`);
                         chains.push(chain);
+                        if (networkProfile === 'mci') mciChains.push(chain);
+                        if (networkProfile === 'irancell') irancellChains.push(chain);
                     }
 
                     protocolIndex++;
@@ -323,6 +342,12 @@ export async function getXrCustomConfigs(isFragment: boolean): Promise<Response>
 
         const isCustomDomain = domain === customDomain;
         await addBestPingConfigs(configs, totalHosts, proxies, chains, isFragment, isCustomDomain);
+        if (!isFragment && mciProxies.length) {
+            await addBestPingConfigs(configs, mciHosts, mciProxies, mciChains, false, isCustomDomain, 'mci');
+        }
+        if (!isFragment && irancellProxies.length) {
+            await addBestPingConfigs(configs, irancellHosts, irancellProxies, irancellChains, false, isCustomDomain, 'irancell');
+        }
     }
 
     if (isFragment) {

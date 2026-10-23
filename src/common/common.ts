@@ -1,11 +1,14 @@
 export enum HttpStatus {
     OK = 200,
+    NO_CONTENT = 204,
     BAD_REQUEST = 400,
     UNAUTHORIZED = 401,
     FORBIDDEN = 403,
     NOT_FOUND = 404,
     METHOD_NOT_ALLOWED = 405,
-    INTERNAL_SERVER_ERROR = 500
+    TOO_MANY_REQUESTS = 429,
+    INTERNAL_SERVER_ERROR = 500,
+    SERVICE_UNAVAILABLE = 503
 }
 
 export function base64EncodeUtf8(str: string): string {
@@ -15,8 +18,10 @@ export function base64EncodeUtf8(str: string): string {
 }
 
 export function base64DecodeUtf8(base64: string) {
+    const normalized = base64.replace(/-/g, '+').replace(/_/g, '/').replace(/\s/g, '');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
     return new TextDecoder().decode(
-        Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+        Uint8Array.from(atob(padded), c => c.charCodeAt(0))
     );
 }
 

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { build } from 'esbuild';
 import { globSync } from 'glob';
 import { minify as jsMinify } from 'terser';
-import { minify as htmlMinify } from 'html-minifier';
+import { minify as htmlMinify } from 'html-minifier-terser';
 import pkg from '../package.json' with { type: 'json' };
 import { gzipSync } from 'zlib';
 
@@ -13,6 +13,7 @@ const __dirname = pathDirname(__filename);
 
 const ASSET_PATH = join(__dirname, '../src/assets');
 const DIST_PATH = join(__dirname, '../dist/');
+const ICON_FONT_PATH = join(__dirname, '../node_modules/@fontsource/material-symbols-rounded/files/material-symbols-rounded-latin-400-normal.woff2');
 
 const green = '\x1b[32m';
 const red = '\x1b[31m';
@@ -43,7 +44,13 @@ async function processHtmlPages() {
                 .replace('/* JS_PLACEHOLDER */', code);
         }
 
-        const minifiedHtml = htmlMinify(html, {
+        if (dir !== 'error') {
+            const iconFont = readFileSync(ICON_FONT_PATH).toString('base64');
+            const iconFontCss = `<style>@font-face{font-family:'Material Symbols Rounded';font-style:normal;font-weight:100 700;font-display:swap;src:url(data:font/woff2;base64,${iconFont}) format('woff2')}.material-symbols-rounded{font-family:'Material Symbols Rounded';font-weight:normal;font-style:normal;line-height:1;font-feature-settings:'liga';-webkit-font-smoothing:antialiased}</style>`;
+            html = html.replace('</head>', `${iconFontCss}</head>`);
+        }
+
+        const minifiedHtml = await htmlMinify(html, {
             collapseWhitespace: true,
             removeAttributeQuotes: true,
             minifyCSS: true

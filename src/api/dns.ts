@@ -21,7 +21,6 @@ export async function listZones() {
 
 export async function createCNAME(zoneID: string, domain: string) {
     const { apiToken, mainDomain } = getGlobals();
-    const projectName = mainDomain.split('.')[0];
 
     try {
         const res = await fetch(`https://api.cloudflare.com/client/v4/zones/${zoneID}/dns_records`, {
@@ -35,7 +34,7 @@ export async function createCNAME(zoneID: string, domain: string) {
                 ttl: 1,
                 type: 'CNAME',
                 comment: `${_project_} Panel`,
-                content: projectName,
+                content: mainDomain,
                 proxied: true
             })
         });

@@ -50,6 +50,7 @@ export function init(request: Request, env: Env) {
         mainDomain: EMBEDED_SETTINGS.mainDomain,
         fallback: EMBEDED_SETTINGS.fallback,
         dohUrl: EMBEDED_SETTINGS.dohUrl || 'https://cloudflare-dns.com/dns-query',
+        dohFallbackEnabled: EMBEDED_SETTINGS.dohFallbackEnabled === true,
         deployType: env.CF_PAGES === '1' ? 'pages' : 'workers',
         httpPorts: [80, 8080, 2052, 2082, 2086, 2095, 8880],
         httpsPorts: [443, 8443, 2053, 2083, 2087, 2096],
@@ -72,7 +73,7 @@ export const getWarpAccounts = (): WarpAccount[] => warpAccounts;
 export const getKvSettings = (): KvSettings => kvSettings;
 export function getMainSettings(): MainSettings {
     const { accID, accEmail, apiToken, mainDomain, ...mainSettings } = EMBEDED_SETTINGS;
-    return mainSettings;
+    return { ...mainSettings, dohFallbackEnabled: mainSettings.dohFallbackEnabled === true };
 }
 
 export function getSharedSettings(): SharedSettings {
@@ -88,7 +89,8 @@ export function getSharedSettings(): SharedSettings {
         proxyIPs,
         prefixes,
         fallback,
-        dohUrl
+        dohUrl,
+        dohFallbackEnabled
     } = EMBEDED_SETTINGS;
 
     return {
@@ -97,7 +99,8 @@ export function getSharedSettings(): SharedSettings {
         proxyIPs,
         prefixes,
         fallback,
-        dohUrl
+        dohUrl,
+        dohFallbackEnabled: dohFallbackEnabled === true
     };
 }
 
@@ -183,7 +186,7 @@ export const clients: Client[] = [
 ];
 
 let kvSettings: KvSettings = {
-    localDNS: '8.8.8.8',
+    localDNS: '178.22.122.100',
     antiSanctionDNS: '178.22.122.100',
     fakeDNS: false,
     enableIPv6: false,
@@ -191,11 +194,11 @@ let kvSettings: KvSettings = {
     logLevel: 'warning',
     customDomain: '',
     protocols: `${_VL_},${_TR_}`,
-    remoteDNS: 'https://8.8.8.8/dns-query',
+    remoteDNS: 'https://dns.adguard-dns.com/dns-query',
     remoteDnsHost: {
-        isDomain: false,
-        host: '8.8.8.8',
-        ipv4: [],
+        isDomain: true,
+        host: 'dns.adguard-dns.com',
+        ipv4: ['94.140.14.14', '94.140.15.15'],
         ipv6: []
     },
     upstreamProxy: '',
@@ -209,12 +212,19 @@ let kvSettings: KvSettings = {
     ports: [443],
     fingerprint: 'chrome',
     bestPingInterval: 30,
+    bestPingUrl: 'https://cp.cloudflare.com/generate_204',
     enableTFO: false,
     enableECH: false,
     echServerName: '',
     customCdnAddrs: [],
     customCdnHost: '',
     customCdnSni: '',
+    mciCdnAddrs: [],
+    mciCdnHost: '',
+    mciCdnSni: '',
+    irancellCdnAddrs: [],
+    irancellCdnHost: '',
+    irancellCdnSni: '',
     fragmentMode: 'custom',
     fragmentPackets: 'tlshello',
     fragmentLengthMin: 100,
@@ -226,7 +236,11 @@ let kvSettings: KvSettings = {
     customSubs: [],
     customConfigs: [],
     warpRemoteDNS: '1.1.1.1',
-    warpEndpoints: ['engage.cloudflareclient.com:2408'],
+    warpEndpoints: [
+        '162.159.192.1:2408',
+        '188.114.96.1:2408',
+        'engage.cloudflareclient.com:2408'
+    ],
     warpBestPingInterval: 30,
     warpReservedBytes: true,
     xrayUdpNoises: [{

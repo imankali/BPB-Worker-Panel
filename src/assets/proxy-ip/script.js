@@ -1,3 +1,43 @@
+const proxyIpTranslations = {
+    'These addresses come from the configured Proxy IP hostname. The test is a limited TCP/HTTP check from the Cloudflare Worker to those published addresses; it does not measure TLS, the client device, or either mobile operator\'s access path.': 'این نشانی‌ها از نام میزبان Proxy IP تنظیم‌شده دریافت می‌شوند. آزمون فقط بررسی محدود TCP/HTTP از Cloudflare Worker تا نشانی‌های منتشرشده است؛ TLS، دستگاه کاربر یا مسیر اپراتورهای موبایل را نمی‌سنجد.',
+    'Proxy IP': 'IP پروکسی',
+    'Worker probe rate': 'درصد موفقیت آزمون Worker',
+    'Worker response time (ms)': 'زمان پاسخ Worker (میلی‌ثانیه)',
+    'Country': 'کشور',
+    'City': 'شهر',
+    'ISP': 'اپراتور اینترنت',
+    'Loading...': 'در حال بارگذاری…',
+    'Failed to get Proxy IPs': 'دریافت IPهای پروکسی ناموفق بود.',
+    'Copy to clipboard': 'کپی در کلیپ‌بورد',
+    'Test published IP from Worker': 'آزمایش IP منتشرشده از Worker',
+    'Copied to clipboard:': 'در کلیپ‌بورد کپی شد:',
+    'Language / زبان': 'زبان'
+};
+
+let panelLanguage = (() => { try { return localStorage.getItem('bpb-panel-language') || 'fa'; } catch { return 'fa'; } })();
+
+function proxyIpText(value) {
+    return panelLanguage === 'fa' ? proxyIpTranslations[value] || value : value;
+}
+
+function setPanelLanguage(language) {
+    panelLanguage = language === 'en' ? 'en' : 'fa';
+    try { localStorage.setItem('bpb-panel-language', panelLanguage); } catch { /* Continue without persistence. */ }
+    document.documentElement.lang = panelLanguage;
+    document.documentElement.dir = panelLanguage === 'fa' ? 'rtl' : 'ltr';
+    document.body.dir = panelLanguage === 'fa' ? 'rtl' : 'ltr';
+    document.body.classList.toggle('is-persian', panelLanguage === 'fa');
+    document.getElementById('panel-language').value = panelLanguage;
+    document.querySelectorAll('[data-i18n]').forEach(element => {
+        const english = element.dataset.i18n;
+        element.textContent = proxyIpText(english);
+    });
+    document.querySelectorAll('[data-i18n-title]').forEach(element => {
+        element.title = proxyIpText(element.dataset.i18nTitle);
+    });
+}
+
+setPanelLanguage(panelLanguage);
 loadGeoData();
 
 async function loadGeoData() {
@@ -13,8 +53,8 @@ async function loadGeoData() {
 
         if (!body.length) {
             const cell = elm('td', {
-                textContent: 'Failed to get Proxy IPs',
-                colSpan: '5'
+                textContent: proxyIpText('Failed to get Proxy IPs'),
+                colSpan: '7'
             });
             const row = elm('tr', {}, [cell]);
 
@@ -30,7 +70,7 @@ async function loadGeoData() {
 
             const copyIcon = createIcon('content_copy', 'Copy to clipboard');
             const ipText = document.createTextNode(` ${item.ip || '-'}`);
-            const testIcon = createIcon('flash_on', 'Test IP');
+            const testIcon = createIcon('flash_on', 'Test published IP from Worker');
             const ipCell = elm('td', {}, [copyIcon, ipText, testIcon]);
 
             const healthRateCell = elm('td', { textContent: '-' });
@@ -50,7 +90,7 @@ async function loadGeoData() {
         });
 
     } catch (err) {
-        const cell = elm('td', { colSpan: '5', textContent: `Error: ${err.message}` });
+        const cell = elm('td', { colSpan: '7', textContent: `${panelLanguage === 'fa' ? 'خطا' : 'Error'}: ${err.message}` });
         const row = elm('tr', {}, [cell]);
         tableBody.innerHTML = '';
         tableBody.appendChild(row);
@@ -60,7 +100,7 @@ async function loadGeoData() {
 
 function copyToClipboard(text) {
     navigator.clipboard.writeText(text)
-        .then(() => alert('✅ Copied to clipboard:\n\n' + text))
+        .then(() => alert(`✅ ${proxyIpText('Copied to clipboard:')}\n\n${text}`))
         .catch(error => console.error('Failed to copy:', error));
 }
 
@@ -76,9 +116,9 @@ function testIp(ip, healthyCell, avgLatencyCell) {
             const { successRate, avgLatencyMs } = body;
             healthyCell.textContent = successRate;
             avgLatencyCell.textContent = avgLatencyMs;
-            document.body.classList.remove('is-loading');
         })
-        .catch((error) => console.error(`Failed to test IP: ${error}`));
+        .catch((error) => console.error(`Failed to test IP: ${error}`))
+        .finally(() => document.body.classList.remove('is-loading'));
 }
 
 function elm(tag, props = {}, children = []) {
@@ -88,8 +128,12 @@ function elm(tag, props = {}, children = []) {
     return node;
 }
 
-const createIcon = (text, title) => elm('span', {
-    className: 'material-symbols-rounded',
-    textContent: text,
-    title
-});
+const createIcon = (text, title) => {
+    const icon = elm('span', {
+        className: 'material-symbols-rounded',
+        textContent: text,
+        title: proxyIpText(title)
+    });
+    icon.dataset.i18nTitle = title;
+    return icon;
+};

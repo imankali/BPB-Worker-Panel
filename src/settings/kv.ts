@@ -19,6 +19,9 @@ export async function getDataset(env: Env): Promise<{
         if (!settings) {
             await env.kv.put('proxySettings', JSON.stringify(kvSettings));
             settings = kvSettings;
+        } else {
+            // Fill newly introduced settings for installations whose KV predates this build.
+            settings = { ...kvSettings, ...settings };
         }
 
         if (!warpAccounts) {
@@ -26,7 +29,9 @@ export async function getDataset(env: Env): Promise<{
         }
 
         if (VERSION !== settings.panelVersion) {
-            settings = await updateDataset(env);
+            // Migrate legacy KV settings in place. Resetting to defaults on a version
+            // change silently erased user configuration on every panel upgrade.
+            settings = await updateDataset(env, settings as PanelSettings);
         }
 
         let telegramBot: TelegramBot | null = await env.kv.get('telegramBot', { type: 'json' });
@@ -102,7 +107,14 @@ export async function updateDataset(env: Env, newSettings?: PanelSettings): Prom
             ['customCdnAddrs'],
             ['customCdnHost'],
             ['customCdnSni'],
+            ['mciCdnAddrs'],
+            ['mciCdnHost'],
+            ['mciCdnSni'],
+            ['irancellCdnAddrs'],
+            ['irancellCdnHost'],
+            ['irancellCdnSni'],
             ['bestPingInterval'],
+            ['bestPingUrl'],
             ['protocols'],
             ['ports'],
             ['fingerprint'],

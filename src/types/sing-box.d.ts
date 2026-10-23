@@ -108,6 +108,7 @@ export interface Route {
 export interface TLS {
     enabled: true;
     server_name: string;
+    fragment?: boolean;
     record_fragment?: boolean;
     insecure: boolean;
     alpn?: string[];
